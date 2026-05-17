@@ -1,0 +1,62 @@
+[{
+  "_id": {
+    "$oid": "6a09fcc7ae318eb2cb2e2269"
+  },
+  "tipo": "post",
+  "autor_id": 42,
+  "body": "Aprendiendo MongoDB 🚀",
+  "media_urls": [
+    "https://cdn.linkedin.com/post1.png"
+  ],
+  "tags": [
+    "#mongodb",
+    "#nosql"
+  ],
+  "group_id": null,
+  "likes_count": 25,
+  "comments_count": 7,
+  "created_at": {
+    "$date": "2026-07-20T18:00:00.000Z"
+  }
+},
+  {
+    "_id": {
+      "$oid": "6a09fd01ae318eb2cb2e226b"
+    },
+    "tipo": "article",
+    "autor_id": 88,
+    "body": "Cómo usar Neo4j para recomendaciones",
+    "media_urls": [],
+    "tags": [
+      "#neo4j",
+      "#graphdb"
+    ],
+    "group_id": null,
+    "likes_count": 13,
+    "comments_count": 2,
+    "created_at": {
+      "$date": "2026-07-21T10:00:00.000Z"
+    }
+  },
+  {
+    "_id": {
+      "$oid": "6a09fd0cae318eb2cb2e226d"
+    },
+    "tipo": "event",
+    "autor_id": 55,
+    "body": "Meetup de Bases de Datos",
+    "media_urls": [],
+    "tags": [
+      "#eventos",
+      "#mongodb"
+    ],
+    "event_location": "Buenos Aires",
+    "event_date": {
+      "$date": "2026-08-15T19:00:00.000Z"
+    },
+    "likes_count": 5,
+    "comments_count": 1,
+    "created_at": {
+      "$date": "2026-07-22T12:00:00.000Z"
+    }
+  }]
