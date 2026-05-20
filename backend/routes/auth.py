@@ -1,0 +1,244 @@
+import os
+import uuid
+import bcrypt
+import secrets
+import random
+import smtplib
+from email.mime.text import MIMEText
+from datetime import datetime, timedelta, timezone
+
+from flask import Blueprint, request, jsonify
+from db import supabase, supabase_admin
+
+auth_bp = Blueprint("auth", __name__, url_prefix="/auth")
+
+
+# ─── Helpers ──────────────────────────────────────────────────────────────────
+
+def get_user_roles(user_id: str) -> list[str]:
+    result = (
+        supabase_admin.table("user_roles")
+        .select("roles(name)")
+        .eq("user_id", user_id)
+        .execute()
+    )
+    return [row["roles"]["name"] for row in result.data if row.get("roles")]
+
+
+def build_user_response(user: dict, roles: list[str]) -> dict:
+    return {
+        "user_id": user["user_id"],
+        "email": user["email"],
+        "name": user["name"],
+        "surname": user.get("surname"),
+        "dni": user.get("dni"),
+        "profile_photo_url": user.get("profile_photo_url"),
+        "roles": roles,
+    }
+
+
+def send_reset_email(to_email: str, name: str, code: str):
+    smtp_host = os.environ.get("SMTP_HOST", "")
+    smtp_port = int(os.environ.get("SMTP_PORT", 587))
+    smtp_user = os.environ.get("SMTP_USER", "")
+    smtp_pass = os.environ.get("SMTP_PASS", "")
+    from_email = os.environ.get("SMTP_FROM", smtp_user)
+
+    body = f"""Hola {name},
+
+Recibiste este email porque solicitaste recuperar tu contraseña en LinkPro.
+
+Tu código de verificación es:
+
+    {code}
+
+Ingresalo en la app para crear tu nueva contraseña.
+El código es válido por 1 hora y solo puede usarse una vez.
+
+Si no solicitaste esto, ignorá este email.
+
+— El equipo de LinkPro
+"""
+    msg = MIMEText(body, "plain", "utf-8")
+    msg["Subject"] = f"Tu código de recuperación es {code} — LinkPro"
+    msg["From"] = from_email
+    msg["To"] = to_email
+
+    if not smtp_host or not smtp_user:
+        # Sin SMTP configurado: imprime el código en consola (útil en desarrollo)
+        print(f"\n{'='*40}")
+        print(f"[DEV] Código de recuperación para {to_email}: {code}")
+        print(f"{'='*40}\n")
+        return
+
+    try:
+        with smtplib.SMTP(smtp_host, smtp_port) as server:
+            server.starttls()
+            server.login(smtp_user, smtp_pass)
+            server.sendmail(from_email, to_email, msg.as_string())
+    except Exception as e:
+        print(f"[WARN] Email no enviado: {e}")
+        print(f"[DEV] Código de recuperación para {to_email}: {code}")
+
+
+# ─── Endpoints ────────────────────────────────────────────────────────────────
+
+@auth_bp.route("/login", methods=["POST"])
+def login():
+    data = request.get_json()
+    email = (data.get("email") or "").strip().lower()
+    password = data.get("password") or ""
+
+    if not email or not password:
+        return jsonify({"error": "Email y contraseña son requeridos."}), 400
+
+    result = (
+        supabase_admin.table("users")
+        .select("user_id, email, name, surname, dni, profile_photo_url, password_hash")
+        .eq("email", email)
+        .limit(1)
+        .execute()
+    )
+
+    if not result.data:
+        return jsonify({"error": "Email o contraseña incorrectos."}), 401
+
+    user = result.data[0]
+    if not bcrypt.checkpw(password.encode("utf-8"), user["password_hash"].encode("utf-8")):
+        return jsonify({"error": "Email o contraseña incorrectos."}), 401
+
+    roles = get_user_roles(user["user_id"])
+    return jsonify(build_user_response(user, roles)), 200
+
+
+@auth_bp.route("/register", methods=["POST"])
+def register():
+    data = request.get_json()
+    name = (data.get("name") or "").strip()
+    surname = (data.get("surname") or "").strip() or None
+    dni = (data.get("dni") or "").strip() or None
+    email = (data.get("email") or "").strip().lower()
+    password = data.get("password") or ""
+    role = data.get("role") or "candidato"
+
+    if not name or not email or not password:
+        return jsonify({"error": "Nombre, email y contraseña son requeridos."}), 400
+    if len(password) < 6:
+        return jsonify({"error": "La contraseña debe tener al menos 6 caracteres."}), 400
+
+    if supabase_admin.table("users").select("user_id").eq("email", email).limit(1).execute().data:
+        return jsonify({"error": "Ya existe una cuenta con ese email."}), 409
+
+    if dni and supabase_admin.table("users").select("user_id").eq("dni", dni).limit(1).execute().data:
+        return jsonify({"error": "Ya existe una cuenta con ese DNI."}), 409
+
+    password_hash = bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
+    user_id = str(uuid.uuid4())
+
+    insert_result = (
+        supabase_admin.table("users")
+        .insert({"user_id": user_id, "email": email, "password_hash": password_hash,
+                 "name": name, "surname": surname, "dni": dni})
+        .execute()
+    )
+    if not insert_result.data:
+        return jsonify({"error": "Error al crear la cuenta."}), 500
+
+    roles_to_assign = {"candidato"}
+    if role in ("poster", "ambos"):
+        roles_to_assign.add("poster")
+
+    # Auto-seed roles catalog si no existen todavía
+    for role_name in roles_to_assign:
+        if not supabase_admin.table("roles").select("role_id").eq("name", role_name).limit(1).execute().data:
+            supabase_admin.table("roles").insert({"name": role_name}).execute()
+
+    roles_result = (
+        supabase_admin.table("roles")
+        .select("role_id, name")
+        .in_("name", list(roles_to_assign))
+        .execute()
+    )
+    if roles_result.data:
+        supabase_admin.table("user_roles").insert(
+            [{"user_id": user_id, "role_id": r["role_id"]} for r in roles_result.data]
+        ).execute()
+
+    # Consultar BD igual que login para que sea consistente
+    actual_roles = get_user_roles(user_id)
+    return jsonify(build_user_response(
+        {"user_id": user_id, "email": email, "name": name, "surname": surname,
+         "dni": dni, "profile_photo_url": None},
+        actual_roles,
+    )), 201
+
+
+@auth_bp.route("/forgot-password", methods=["POST"])
+def forgot_password():
+    email = (request.get_json().get("email") or "").strip().lower()
+    if not email:
+        return jsonify({"error": "Email requerido."}), 400
+
+    user_res = (
+        supabase_admin.table("users")
+        .select("user_id, name")
+        .eq("email", email)
+        .limit(1)
+        .execute()
+    )
+    # Siempre 200 para no revelar si el email existe
+    msg = {"message": "Si el email está registrado, recibirás un enlace de recuperación."}
+
+    if not user_res.data:
+        return jsonify(msg), 200
+
+    user = user_res.data[0]
+    # Código de 6 dígitos seguro
+    code = f"{random.SystemRandom().randint(0, 999999):06d}"
+    expires_at = (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat()
+
+    supabase_admin.table("password_reset_tokens").insert({
+        "token": code,
+        "user_id": user["user_id"],
+        "expires_at": expires_at,
+        "used": False,
+    }).execute()
+
+    send_reset_email(email, user["name"], code)
+
+    return jsonify(msg), 200
+
+
+@auth_bp.route("/reset-password", methods=["POST"])
+def reset_password():
+    data = request.get_json()
+    token = data.get("token", "").strip()
+    password = data.get("password", "")
+
+    if not token or not password or len(password) < 6:
+        return jsonify({"error": "Token y contraseña (mín. 6 caracteres) requeridos."}), 400
+
+    token_res = (
+        supabase_admin.table("password_reset_tokens")
+        .select("*")
+        .eq("token", token)
+        .eq("used", False)
+        .limit(1)
+        .execute()
+    )
+    if not token_res.data:
+        return jsonify({"error": "Token inválido o ya utilizado."}), 400
+
+    token_data = token_res.data[0]
+    expires = datetime.fromisoformat(token_data["expires_at"])
+    if expires.tzinfo is None:
+        expires = expires.replace(tzinfo=timezone.utc)
+
+    if expires < datetime.now(timezone.utc):
+        return jsonify({"error": "El enlace expiró. Solicitá uno nuevo."}), 400
+
+    new_hash = bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
+    supabase_admin.table("users").update({"password_hash": new_hash}).eq("user_id", token_data["user_id"]).execute()
+    supabase_admin.table("password_reset_tokens").update({"used": True}).eq("token", token).execute()
+
+    return jsonify({"message": "Contraseña actualizada correctamente."}), 200

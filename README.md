@@ -1,50 +1,77 @@
-# TPO-Linkedin — Trabajo Práctico de Bases de Datos
+# LinkedIn TPO - Grupo 3
 
-Simulación de la aplicación LinkedIn usando **persistencia políglota**: 1 motor SQL + 3 motores NoSQL.
+Trabajo práctico de simulación de una red profesional tipo LinkedIn, implementado con **arquitectura de persistencia políglota** (SQL + 3 NoSQL).
 
-## Equipo
+## Integrantes
 
-- Bentivegna, Valentina
-- Escudero, Morena
-- Rodríguez, Megan
-- Rodríguez, Melanie
+- Pablo
+- Maria Paz
+- Federico
+
+## Entrega
+
+10 de junio de 2026
+
+---
+
+## Arquitectura
+
+| Base de datos | Tipo | Responsabilidad |
+|---|---|---|
+| **Oracle** (web) | Relacional | Usuarios, autenticación, sesiones, Empresas, Empleos, Postulaciones, Skills, Educación, Experiencia laboral |
+| **MongoDB Atlas** | Documental | Perfiles extendidos, Posts, Comentarios |
+| **Neo4j Aura** | Grafos | Conexiones entre usuarios, recomendaciones, membresías a grupos |
+| **DataStax Astra (Cassandra)** | Columnar | Mensajes directos, mensajes de grupo, Notificaciones |
 
 ## Stack
 
-| Motor | Tipo | Qué guarda |
-|---|---|---|
-| Cloud SQL | Relacional | Usuarios, empresas, empleos, postulaciones, educación, experiencia laboral, habilidades |
-| MongoDB | Documental | Posts, comentarios, grupos, eventos |
-| Cassandra | Columnar | Notificaciones, mensajes directos, mensajes de grupo, feed pre-computado |
-| Neo4j | Grafo | Conexiones entre personas, relaciones con empresas y habilidades |
+- **Backend**: Python + FastAPI
+- **Frontend**: React + Vite
+- **Versionado**: Git + GitHub
 
-El reparto detallado con justificación por RF/RNF está en [`docs/modelo-datos.md`](docs/modelo-datos.md).
+---
 
-## Estado actual del proyecto
-
-**Fase: organización y diseño.** Todavía no hay código.
-
-## Estructura de carpetas
+## Estructura del repositorio
 
 ```
-TPO-Linkedin/
-├── docs/                       # Documentación de diseño
-│   └── modelo-datos.md         # Reparto entidades → motor (justificado)
-├── schemas/                    # Esquemas de cada base (a definir)
-│   ├── sql/
-│   ├── mongo/
-│   ├── cassandra/
-│   └── neo4j/
-├── frontend/                   # Interfaz de usuario (HTML/CSS/JS)
-├── seeds/                      # Datos de prueba (a definir)
-├── tests/                      # Tests (a definir)
+linkedin-tpo-grupo3/
+├── backend/          # API en Python (FastAPI)
+├── frontend/         # UI en React (Vite)
+├── docs/             # Documentación, DER, decisiones de diseño
+│   ├── DER.png
+│   ├── consigna.pdf
+│   └── decisiones.md
 └── README.md
 ```
 
-## Próximos pasos
+## Cómo correr el proyecto
 
-1. Definir el esquema SQL (DDL de las tablas)
-2. Definir la estructura de documentos MongoDB
-3. Definir el esquema Cassandra (CQL)
-4. Definir el modelo Neo4j (nodos, relaciones, constraints)
-5. Recién después, codificar el backend y el frontend
+> En construcción. Se completará a medida que avance el desarrollo.
+
+### Backend
+
+```bash
+cd backend
+python -m venv venv
+source venv/bin/activate  # Windows: venv\Scripts\activate
+pip install -r requirements.txt
+cp .env.example .env      # Y completar con las credenciales
+uvicorn main:app --reload
+```
+
+### Frontend
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+---
+
+## Convenciones de trabajo
+
+- **Ramas**: `main` (estable) → `develop` (integración) → `feature/<dominio>` (trabajo individual)
+- **Pull Requests**: toda rama feature se mergea a develop vía PR, revisado por al menos 1 compañero/a.
+- **Commits**: en español, descriptivos. Ej: `feat: endpoint de registro de usuario`, `fix: validación de email en login`.
+- **Credenciales**: NUNCA commitear el archivo `.env`. Solo `.env.example` con los nombres de las variables.
