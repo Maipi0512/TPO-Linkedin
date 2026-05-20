@@ -1,7 +1,11 @@
 import uuid
+import os
 from datetime import datetime, timezone
 from flask import Blueprint, request, jsonify
 from db import supabase_admin
+
+PHOTOS_DIR = os.path.join(os.path.dirname(__file__), "..", "static", "photos")
+os.makedirs(PHOTOS_DIR, exist_ok=True)
 
 profile_bp = Blueprint("profile", __name__, url_prefix="/profile")
 
@@ -85,18 +89,15 @@ def upload_photo(user_id):
     if ext not in ("jpg", "jpeg", "png", "webp"):
         return jsonify({"error": "Formato no soportado. Usá JPG, PNG o WEBP."}), 400
 
-    path = f"{user_id}.{ext}"
     content = file.read()
+    if len(content) > 5 * 1024 * 1024:
+        return jsonify({"error": "La imagen no puede superar 5 MB."}), 400
 
-    try:
-        supabase_admin.storage.from_("avatars").upload(
-            path, content,
-            {"content-type": file.content_type, "upsert": "true"}
-        )
-    except Exception as e:
-        return jsonify({"error": f"Error al subir la imagen: {str(e)}"}), 500
+    filename = f"{user_id}.{ext}"
+    with open(os.path.join(PHOTOS_DIR, filename), "wb") as f:
+        f.write(content)
 
-    url = supabase_admin.storage.from_("avatars").get_public_url(path)
+    url = f"http://localhost:5000/static/photos/{filename}"
     supabase_admin.table("users").update({"profile_photo_url": url}).eq("user_id", user_id).execute()
 
     return jsonify({"url": url}), 200

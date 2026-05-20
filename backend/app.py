@@ -8,6 +8,8 @@ load_dotenv()
 from routes.auth import auth_bp
 from routes.profile import profile_bp
 from routes.jobs import jobs_bp
+from routes.posts import posts_bp
+from init_db import init_db
 
 app = Flask(__name__)
 CORS(app, origins=["http://localhost:5173", "http://127.0.0.1:5173"])
@@ -15,6 +17,10 @@ CORS(app, origins=["http://localhost:5173", "http://127.0.0.1:5173"])
 app.register_blueprint(auth_bp)
 app.register_blueprint(profile_bp)
 app.register_blueprint(jobs_bp)
+app.register_blueprint(posts_bp)
+
+# Crea las tablas SQL en Supabase al arrancar si no existen
+init_db()
 
 
 @app.route("/health")

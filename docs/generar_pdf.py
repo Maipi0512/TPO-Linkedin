@@ -107,7 +107,7 @@ pdf.ln(1)
 anchos = [55, 135]
 pdf.tabla_encabezado(["Modulo", "Tablas involucradas"], anchos)
 filas = [
-    ("Usuarios y autenticacion", "users, roles, user_roles, password_reset_tokens"),
+    ("Usuarios y autenticacion", "users, roles, user_roles"),
     ("Perfil profesional", "users, work experience, education, skills, user_skill"),
     ("Empresas", "companies"),
     ("Ofertas de empleo", "jobs, job_skill"),
@@ -199,8 +199,147 @@ pdf.parrafo(
     "heterogeneos o evolucionan rapidamente en estructura (por ejemplo, el contenido de posts o comentarios)."
 )
 
-# ── 4. Diagrama
-pdf.titulo("4. Diagrama de relaciones (simplificado)")
+# ── 4. Queries ejecutadas desde el backend
+pdf.titulo("4. Queries ejecutadas desde el backend")
+pdf.parrafo(
+    "El backend (Flask) dispara las queries SQL automaticamente al iniciar, creando las tablas si no existen "
+    "(via init_db.py con psycopg2). Durante la ejecucion, cada ruta accede a Supabase usando el SDK PostgREST, "
+    "que construye y ejecuta las queries SQL internamente. A continuacion se detallan las operaciones por modulo:"
+)
+
+pdf.subtitulo("4.1 Modulo de autenticacion (auth.py)")
+pdf.parrafo("REGISTRO - Inserta usuario y asigna rol. Si el rol es 'poster', busca o crea la empresa:")
+pdf.codigo(
+    "INSERT INTO users (user_id, email, password_hash, name, surname, dni)\n"
+    "  VALUES ($1, $2, $3, $4, $5, $6)\n\n"
+    "SELECT company_id FROM companies WHERE name ILIKE $1 LIMIT 1\n"
+    "-- Si no existe:\n"
+    "INSERT INTO companies (company_id, name) VALUES ($1, $2)\n\n"
+    "INSERT INTO user_roles (user_id, role_id) VALUES ($1, $2)"
+)
+pdf.parrafo("LOGIN - Busca el usuario por email y verifica la contrasena con bcrypt:")
+pdf.codigo(
+    "SELECT user_id, email, name, surname, dni, profile_photo_url, password_hash\n"
+    "  FROM users WHERE email = $1 LIMIT 1\n\n"
+    "SELECT roles.name FROM user_roles\n"
+    "  JOIN roles ON user_roles.role_id = roles.role_id\n"
+    "  WHERE user_roles.user_id = $1"
+)
+pdf.parrafo("CAMBIAR CONTRASENA (reset):")
+pdf.codigo(
+    "UPDATE users SET password_hash = $1 WHERE user_id = $2\n"
+    "-- Nota: el token de reset se guarda en memoria del servidor (dict Python),\n"
+    "-- no en la base de datos, para simplificar el entorno de desarrollo."
+)
+
+pdf.subtitulo("4.2 Modulo de perfil (profile.py)")
+pdf.parrafo("ACTUALIZAR DATOS PERSONALES:")
+pdf.codigo(
+    "UPDATE users SET name=$1, surname=$2, dni=$3, updated_at=now()\n"
+    "  WHERE user_id = $4\n\n"
+    "-- Foto: se guarda en backend/static/photos/ y se actualiza la URL:\n"
+    "UPDATE users SET profile_photo_url=$1 WHERE user_id = $2"
+)
+pdf.parrafo("EXPERIENCIA LABORAL (work experience):")
+pdf.codigo(
+    "-- Listar:\n"
+    "SELECT we.*, companies.name FROM \"work experience\" we\n"
+    "  LEFT JOIN companies ON we.company_id = companies.company_id\n"
+    "  WHERE we.user_id = $1 ORDER BY from_date DESC\n\n"
+    "-- Agregar:\n"
+    "INSERT INTO \"work experience\"\n"
+    "  (user_id, company_id, title, description, from_date, end_date, is_current)\n"
+    "  VALUES ($1, $2, $3, $4, $5, $6, $7)\n\n"
+    "-- Eliminar:\n"
+    "DELETE FROM \"work experience\" WHERE we_id=$1 AND user_id=$2"
+)
+pdf.parrafo("EDUCACION:")
+pdf.codigo(
+    "-- Listar:\n"
+    "SELECT * FROM education WHERE user_id=$1 ORDER BY from_date DESC\n\n"
+    "-- Agregar:\n"
+    "INSERT INTO education\n"
+    "  (user_id, title, field, institution, from_date, end_date, is_actual)\n"
+    "  VALUES ($1, $2, $3, $4, $5, $6, $7)\n\n"
+    "-- Eliminar:\n"
+    "DELETE FROM education WHERE edu_id=$1 AND user_id=$2"
+)
+pdf.parrafo("HABILIDADES (skills / user_skill):")
+pdf.codigo(
+    "-- Buscar o crear skill en el catalogo:\n"
+    "SELECT skill_id FROM skills WHERE name ILIKE $1 LIMIT 1\n"
+    "INSERT INTO skills (name, type) VALUES ($1, $2)\n\n"
+    "-- Agregar o actualizar nivel de una habilidad en el perfil:\n"
+    "INSERT INTO user_skill (user_id, skill_id, level) VALUES ($1, $2, $3)\n"
+    "  ON CONFLICT (user_id, skill_id) DO UPDATE SET level=$3\n\n"
+    "-- Listar habilidades del perfil:\n"
+    "SELECT us.level, s.skill_id, s.name, s.type\n"
+    "  FROM user_skill us JOIN skills s ON us.skill_id = s.skill_id\n"
+    "  WHERE us.user_id = $1\n\n"
+    "-- Eliminar:\n"
+    "DELETE FROM user_skill WHERE user_id=$1 AND skill_id=$2"
+)
+
+pdf.subtitulo("4.3 Modulo de empleos (jobs.py)")
+pdf.parrafo("LISTAR OFERTAS ACTIVAS - JOIN con companies y skills en una sola operacion:")
+pdf.codigo(
+    "-- El SDK PostgREST ejecuta internamente:\n"
+    "SELECT jobs.*, companies.name,\n"
+    "       job_skill.skill_id, skills.name, skills.type\n"
+    "  FROM jobs\n"
+    "  LEFT JOIN companies ON jobs.company_id = companies.company_id\n"
+    "  LEFT JOIN job_skill  ON job_skill.job_id = jobs.job_id\n"
+    "  LEFT JOIN skills     ON skills.skill_id  = job_skill.skill_id\n"
+    "  WHERE jobs.is_active = TRUE\n"
+    "  ORDER BY jobs.created_at DESC"
+)
+pdf.parrafo("CREAR OFERTA Y AGREGAR SKILLS:")
+pdf.codigo(
+    "INSERT INTO jobs\n"
+    "  (job_id, poster_user_id, company_id, title, description,\n"
+    "   location, shift, modality, is_active)\n"
+    "  VALUES ($1,$2,$3,$4,$5,$6,$7,$8,TRUE)\n\n"
+    "-- Para cada skill requerida:\n"
+    "INSERT INTO job_skill (job_id, skill_id) VALUES ($1, $2)"
+)
+pdf.parrafo("ELIMINAR OFERTA - ON DELETE CASCADE elimina automaticamente job_skill y applications:")
+pdf.codigo(
+    "DELETE FROM jobs WHERE job_id=$1\n"
+    "-- Cascade: borra automaticamente job_skill y applications asociadas"
+)
+
+pdf.subtitulo("4.4 Modulo de postulaciones (jobs.py)")
+pdf.parrafo("POSTULARSE A UNA OFERTA:")
+pdf.codigo(
+    "INSERT INTO applications (application_id, job_id, user_id, status)\n"
+    "  VALUES ($1, $2, $3, 'submitted')\n"
+    "-- UNIQUE (job_id, user_id) impide postulaciones duplicadas"
+)
+pdf.parrafo("VER MIS POSTULACIONES (candidato) - JOIN de 3 tablas:")
+pdf.codigo(
+    "SELECT applications.*, jobs.job_id, jobs.title,\n"
+    "       companies.name, users.user_id, users.name,\n"
+    "       users.surname, users.email\n"
+    "  FROM applications\n"
+    "  LEFT JOIN jobs      ON applications.job_id  = jobs.job_id\n"
+    "  LEFT JOIN companies ON jobs.company_id       = companies.company_id\n"
+    "  LEFT JOIN users     ON applications.user_id  = users.user_id\n"
+    "  WHERE applications.user_id = $1\n"
+    "  ORDER BY applications.applied_at DESC"
+)
+pdf.parrafo("VER POSTULANTES DE UNA OFERTA (poster) Y CAMBIAR ESTADO:")
+pdf.codigo(
+    "SELECT applications.*, users.name, users.surname,\n"
+    "       users.email, users.profile_photo_url\n"
+    "  FROM applications\n"
+    "  JOIN users ON applications.user_id = users.user_id\n"
+    "  WHERE applications.job_id = $1\n\n"
+    "UPDATE applications SET status=$1, updated_at=now()\n"
+    "  WHERE application_id=$2"
+)
+
+# ── 5. Diagrama
+pdf.titulo("5. Diagrama de relaciones (simplificado)")
 pdf.codigo(
     "users ----------------------- user_roles ---- roles\n"
     "  |\n"
@@ -216,7 +355,7 @@ pdf.codigo(
 )
 
 # ── 5. Arquitectura
-pdf.titulo("5. Integracion en la arquitectura del sistema")
+pdf.titulo("6. Integracion en la arquitectura del sistema")
 
 pdf.subtitulo("Backend: Flask + Supabase Python SDK")
 pdf.parrafo(
@@ -233,12 +372,13 @@ pdf.parrafo(
 pdf.subtitulo("Supabase como infraestructura SQL")
 pdf.bullet("PostgreSQL gestionado: base de datos relacional con todas las garantias de consistencia.")
 pdf.bullet("PostgREST: convierte automaticamente las tablas en endpoints REST con soporte de filtros, joins y paginacion.")
-pdf.bullet("Storage: almacenamiento de archivos (fotos de perfil) integrado con el mismo proyecto.")
+pdf.bullet("Fotos de perfil: se almacenan en el sistema de archivos del servidor Flask (static/photos/) y se sirven como archivos estaticos desde http://localhost:5000/static/photos/. La URL resultante se guarda en el campo profile_photo_url de la tabla users.")
 pdf.bullet("Row Level Security (RLS): politicas de acceso a nivel de fila. En el TP se usa la clave service_role desde el backend.")
+pdf.bullet("Tokens de recuperacion de contrasena: se almacenan en memoria del servidor (diccionario Python) durante la sesion activa, con expiracion de 1 hora. Este enfoque simplifica el desarrollo evitando una tabla de tokens en la BD.")
 pdf.ln(2)
 
 # ── 6. Comparacion
-pdf.titulo("6. Comparacion con las otras bases del proyecto")
+pdf.titulo("7. Comparacion con las otras bases del proyecto")
 pdf.ln(1)
 
 anchos2 = [42, 50, 50, 48]
@@ -254,7 +394,7 @@ for i, fila in enumerate(comp):
 pdf.ln(4)
 
 # ── 7. Conclusion
-pdf.titulo("7. Conclusion")
+pdf.titulo("8. Conclusion")
 pdf.parrafo("La eleccion de SQL para los modulos de usuarios, perfiles, empleos y postulaciones esta justificada por:")
 pdf.bullet("La naturaleza relacional de los datos: usuarios, empresas, ofertas y postulaciones se interconectan mediante referencias que deben ser consistentes.")
 pdf.bullet("La necesidad de integridad referencial: las claves foraneas garantizan que los datos no queden en estados invalidos.")

@@ -3,3 +3,5 @@ flask-cors==5.0.0
 supabase==2.15.1
 bcrypt==4.3.0
 python-dotenv==1.1.0
+pymongo[srv]==4.17.0
+psycopg2-binary==2.9.10

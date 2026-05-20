@@ -12,6 +12,9 @@ from db import supabase, supabase_admin
 
 auth_bp = Blueprint("auth", __name__, url_prefix="/auth")
 
+# Tokens de recuperación en memoria { token: {"user_id": str, "expires_at": datetime} }
+_reset_tokens: dict = {}
+
 
 # ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -144,8 +147,10 @@ def register():
     if not insert_result.data:
         return jsonify({"error": "Error al crear la cuenta."}), 500
 
+    company_name = (data.get("company_name") or "").strip() or None
+
     roles_to_assign = {"candidato"}
-    if role in ("poster", "ambos"):
+    if role == "poster":
         roles_to_assign.add("poster")
 
     # Auto-seed roles catalog si no existen todavía
@@ -164,13 +169,25 @@ def register():
             [{"user_id": user_id, "role_id": r["role_id"]} for r in roles_result.data]
         ).execute()
 
-    # Consultar BD igual que login para que sea consistente
+    # Crear/buscar empresa si es poster
+    company_id = None
+    if role == "poster" and company_name:
+        existing = supabase_admin.table("companies").select("company_id").ilike("name", company_name).limit(1).execute()
+        if existing.data:
+            company_id = existing.data[0]["company_id"]
+        else:
+            company_id = str(uuid.uuid4())
+            supabase_admin.table("companies").insert({"company_id": company_id, "name": company_name}).execute()
+
     actual_roles = get_user_roles(user_id)
-    return jsonify(build_user_response(
+    resp = build_user_response(
         {"user_id": user_id, "email": email, "name": name, "surname": surname,
          "dni": dni, "profile_photo_url": None},
         actual_roles,
-    )), 201
+    )
+    if company_id:
+        resp["company_id"] = company_id
+    return jsonify(resp), 201
 
 
 @auth_bp.route("/forgot-password", methods=["POST"])
@@ -193,20 +210,15 @@ def forgot_password():
         return jsonify(msg), 200
 
     user = user_res.data[0]
-    # Código de 6 dígitos seguro
     code = f"{random.SystemRandom().randint(0, 999999):06d}"
-    expires_at = (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat()
-
-    supabase_admin.table("password_reset_tokens").insert({
-        "token": code,
+    _reset_tokens[code] = {
         "user_id": user["user_id"],
-        "expires_at": expires_at,
-        "used": False,
-    }).execute()
+        "expires_at": datetime.now(timezone.utc) + timedelta(hours=1),
+    }
 
     send_reset_email(email, user["name"], code)
 
-    return jsonify(msg), 200
+    return jsonify({"message": "Código generado correctamente.", "code": code}), 200
 
 
 @auth_bp.route("/reset-password", methods=["POST"])
@@ -218,27 +230,16 @@ def reset_password():
     if not token or not password or len(password) < 6:
         return jsonify({"error": "Token y contraseña (mín. 6 caracteres) requeridos."}), 400
 
-    token_res = (
-        supabase_admin.table("password_reset_tokens")
-        .select("*")
-        .eq("token", token)
-        .eq("used", False)
-        .limit(1)
-        .execute()
-    )
-    if not token_res.data:
+    token_data = _reset_tokens.get(token)
+    if not token_data:
         return jsonify({"error": "Token inválido o ya utilizado."}), 400
 
-    token_data = token_res.data[0]
-    expires = datetime.fromisoformat(token_data["expires_at"])
-    if expires.tzinfo is None:
-        expires = expires.replace(tzinfo=timezone.utc)
-
-    if expires < datetime.now(timezone.utc):
-        return jsonify({"error": "El enlace expiró. Solicitá uno nuevo."}), 400
+    if token_data["expires_at"] < datetime.now(timezone.utc):
+        del _reset_tokens[token]
+        return jsonify({"error": "El código expiró. Solicitá uno nuevo."}), 400
 
     new_hash = bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
     supabase_admin.table("users").update({"password_hash": new_hash}).eq("user_id", token_data["user_id"]).execute()
-    supabase_admin.table("password_reset_tokens").update({"used": True}).eq("token", token).execute()
+    del _reset_tokens[token]
 
     return jsonify({"message": "Contraseña actualizada correctamente."}), 200

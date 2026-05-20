@@ -38,6 +38,34 @@ type UserSession = {
   dni: string | null;
   profile_photo_url: string | null;
   roles: string[];
+  company_id?: string | null;
+};
+
+type PostComment = {
+  _id: string;
+  post_id: string;
+  user_id: string;
+  author_name: string;
+  author_surname: string;
+  text: string;
+  created_at: string;
+};
+
+type Post = {
+  _id: string;
+  user_id: string;
+  author_name: string;
+  author_surname: string;
+  author_photo_url: string | null;
+  content: string;
+  media?: { type: string; url: string } | null;
+  tags: string[];
+  likes_count: number;
+  comments_count: number;
+  user_liked: boolean;
+  comments: PostComment[];
+  created_at: string;
+  updated_at: string;
 };
 
 const ME = {
@@ -218,7 +246,7 @@ function Sidebar({ page, setPage, onLogout, user }: { page: Page; setPage: (p: P
 }
 
 // ─── Landing Page ────────────────────────────────────────────────────────────
-function LandingPage({ onGetStarted }: { onGetStarted: () => void }) {
+function LandingPage({ onLogin, onRegister }: { onLogin: () => void; onRegister: () => void }) {
   const features = [
     { icon: Users, title: "Conectate profesionalmente", desc: "Construí tu red de contactos con recomendaciones basadas en contactos en común y empresas compartidas." },
     { icon: Briefcase, title: "Encontrá tu próximo empleo", desc: "Buscá ofertas con matching automático de habilidades y postulate con un clic conservando tu historial." },
@@ -236,11 +264,11 @@ function LandingPage({ onGetStarted }: { onGetStarted: () => void }) {
           Link<span className="text-[var(--accent)]">Pro</span>
         </span>
         <div className="flex items-center gap-3">
-          <button onClick={onGetStarted} className="text-sm text-muted-foreground hover:text-foreground transition-colors px-4 py-2">
+          <button onClick={onLogin} className="text-sm text-muted-foreground hover:text-foreground transition-colors px-4 py-2">
             Iniciar sesión
           </button>
           <button
-            onClick={onGetStarted}
+            onClick={onRegister}
             className="bg-primary text-primary-foreground text-sm font-semibold px-5 py-2.5 rounded-xl hover:opacity-90 transition-opacity"
           >
             Registrarse gratis
@@ -269,7 +297,7 @@ function LandingPage({ onGetStarted }: { onGetStarted: () => void }) {
               Conectate con profesionales, encontrá empleos con matching de habilidades y hacé crecer tu red en la plataforma diseñada para el mercado laboral argentino.
             </p>
             <button
-              onClick={onGetStarted}
+              onClick={onRegister}
               className="inline-flex items-center gap-2 bg-[var(--accent)] text-[var(--accent-foreground)] font-bold px-8 py-4 rounded-xl text-base hover:opacity-90 transition-opacity"
             >
               Comenzar ahora <ArrowRight size={18} />
@@ -320,7 +348,7 @@ function LandingPage({ onGetStarted }: { onGetStarted: () => void }) {
         <h2 className="font-display text-3xl font-semibold text-white mb-4">¿Listo para dar el siguiente paso?</h2>
         <p className="text-slate-300 mb-8 max-w-md mx-auto">Unite gratis hoy y empezá a conectarte con los profesionales que van a impulsar tu carrera.</p>
         <button
-          onClick={onGetStarted}
+          onClick={onRegister}
           className="bg-[var(--accent)] text-[var(--accent-foreground)] font-bold px-8 py-4 rounded-xl hover:opacity-90 transition-opacity"
         >
           Crear cuenta gratuita
@@ -339,13 +367,14 @@ function LandingPage({ onGetStarted }: { onGetStarted: () => void }) {
 // ─── Auth Page ───────────────────────────────────────────────────────────────
 function AuthPage({ onLogin, initialMode }: { onLogin: (user: UserSession) => void; initialMode?: AuthMode }) {
   const [mode, setMode] = useState<AuthMode>(initialMode ?? "login");
-  const [form, setForm] = useState({ name: "", surname: "", dni: "", email: "", password: "", role: "candidato" });
+  const [form, setForm] = useState({ name: "", surname: "", dni: "", email: "", password: "", role: "candidato", company_name: "" });
   const [resetToken, setResetToken] = useState("");
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
+  const [shownCode, setShownCode] = useState("");
   const [loading, setLoading] = useState(false);
 
-  const switchMode = (m: AuthMode) => { setMode(m); setError(""); setSuccess(""); };
+  const switchMode = (m: AuthMode) => { setMode(m); setError(""); setSuccess(""); setShownCode(""); };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -355,11 +384,17 @@ function AuthPage({ onLogin, initialMode }: { onLogin: (user: UserSession) => vo
       if (!form.email) { setError("Ingresá tu email."); return; }
       setLoading(true);
       try {
-        await fetch(`${API_URL}/auth/forgot-password`, {
+        const res = await fetch(`${API_URL}/auth/forgot-password`, {
           method: "POST", headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ email: form.email }),
         });
-        setSuccess("Si el email está registrado, recibirás un enlace en tu correo.");
+        const json = await res.json();
+        if (json.code) {
+          setShownCode(json.code);
+          setSuccess("Código generado. Copialo y usalo para restablecer tu contraseña.");
+        } else {
+          setSuccess("Si el email está registrado, se generará un código.");
+        }
       } catch { setError("Error de conexión con el servidor."); }
       finally { setLoading(false); }
       return;
@@ -486,19 +521,33 @@ function AuthPage({ onLogin, initialMode }: { onLogin: (user: UserSession) => vo
 
             {/* Roles (solo register) */}
             {mode === "register" && (
-              <div>
-                <label className="text-sm font-medium text-foreground block mb-1.5">Rol inicial</label>
-                <div className="flex gap-3">
-                  {["candidato", "poster", "ambos"].map((r) => (
-                    <button key={r} type="button" onClick={() => setForm({ ...form, role: r })} className={`flex-1 py-2.5 rounded-xl text-sm font-medium border transition-all capitalize ${form.role === r ? "bg-primary text-primary-foreground border-primary" : "bg-input-background border-border text-muted-foreground hover:border-primary/40"}`}>{r}</button>
-                  ))}
+              <>
+                <div>
+                  <label className="text-sm font-medium text-foreground block mb-1.5">Rol</label>
+                  <div className="flex gap-3">
+                    {["candidato", "poster"].map((r) => (
+                      <button key={r} type="button" onClick={() => setForm({ ...form, role: r, company_name: "" })} className={`flex-1 py-2.5 rounded-xl text-sm font-medium border transition-all capitalize ${form.role === r ? "bg-primary text-primary-foreground border-primary" : "bg-input-background border-border text-muted-foreground hover:border-primary/40"}`}>{r === "candidato" ? "Candidato" : "Empresa / Poster"}</button>
+                    ))}
+                  </div>
                 </div>
-                <p className="text-xs text-muted-foreground mt-1.5 flex items-center gap-1"><Lock size={12} /> Por defecto el usuario es siempre candidato.</p>
-              </div>
+                {form.role === "poster" && (
+                  <div>
+                    <label className="text-sm font-medium text-foreground block mb-1.5">Nombre de empresa <span className="text-destructive">*</span></label>
+                    <input type="text" placeholder="Ej: Globant, MercadoLibre..." value={form.company_name} onChange={(e) => setForm({ ...form, company_name: e.target.value })} className="w-full bg-input-background border border-border rounded-xl px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-primary/30 transition" />
+                  </div>
+                )}
+              </>
             )}
 
             {error && <p className="text-sm text-destructive bg-destructive/10 px-4 py-2.5 rounded-xl">{error}</p>}
             {success && <p className="text-sm text-green-700 bg-green-100 px-4 py-2.5 rounded-xl">{success}</p>}
+            {shownCode && (
+              <div className="bg-amber-50 border border-amber-300 rounded-xl px-4 py-3 text-center">
+                <p className="text-xs text-amber-700 mb-1">Tu código de verificación</p>
+                <p className="font-mono text-2xl font-bold tracking-[0.4em] text-amber-900">{shownCode}</p>
+                <p className="text-xs text-amber-600 mt-1">Copialo y usalo en "Restablecer contraseña"</p>
+              </div>
+            )}
 
             <button type="submit" disabled={loading} className="w-full bg-primary text-primary-foreground font-semibold py-3.5 rounded-xl hover:opacity-90 transition-opacity mt-2 disabled:opacity-60">
               {loading ? "Cargando..." : mode === "login" ? "Iniciar sesión" : mode === "register" ? "Crear cuenta" : mode === "forgot" ? "Enviar enlace" : "Guardar contraseña"}
@@ -525,99 +574,307 @@ function AuthPage({ onLogin, initialMode }: { onLogin: (user: UserSession) => vo
 }
 
 // ─── Feed Page ────────────────────────────────────────────────────────────────
-function FeedPage() {
-  const [posts, setPosts] = useState(POSTS);
+function FeedPage({ user }: { user: UserSession }) {
+  const [posts, setPosts] = useState<Post[]>([]);
+  const [loading, setLoading] = useState(true);
   const [newPost, setNewPost] = useState("");
+  const [newTags, setNewTags] = useState("");
+  const [posting, setPosting] = useState(false);
+  const [openComments, setOpenComments] = useState<Set<string>>(new Set());
+  const [commentTexts, setCommentTexts] = useState<Record<string, string>>({});
 
-  const toggleLike = (id: number) => {
-    setPosts(posts.map((p) =>
-      p.id === id ? { ...p, liked: !p.liked, likes: p.liked ? p.likes - 1 : p.likes + 1 } : p
-    ));
+  const load = async () => {
+    setLoading(true);
+    try {
+      const res = await fetch(`${API_URL}/posts?user_id=${user.user_id}`);
+      if (res.ok) setPosts(await res.json());
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => { load(); }, []);
+
+  const handlePost = async () => {
+    if (!newPost.trim() || posting) return;
+    setPosting(true);
+    try {
+      const tags = newTags.split(",").map(t => t.trim()).filter(Boolean);
+      const res = await fetch(`${API_URL}/posts`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          user_id: user.user_id,
+          author_name: user.name,
+          author_surname: user.surname,
+          author_photo_url: user.profile_photo_url,
+          content: newPost.trim(),
+          tags,
+        }),
+      });
+      if (res.ok) {
+        const created: Post = await res.json();
+        setPosts(prev => [created, ...prev]);
+        setNewPost("");
+        setNewTags("");
+      }
+    } finally {
+      setPosting(false);
+    }
+  };
+
+  const handleLike = async (postId: string) => {
+    const res = await fetch(`${API_URL}/posts/${postId}/like`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ user_id: user.user_id }),
+    });
+    if (res.ok) {
+      const data = await res.json();
+      setPosts(prev => prev.map(p =>
+        p._id === postId ? { ...p, likes_count: data.likes_count, user_liked: data.user_liked } : p
+      ));
+    }
+  };
+
+  const handleDelete = async (postId: string) => {
+    if (!confirm("¿Eliminar este post?")) return;
+    const res = await fetch(`${API_URL}/posts/${postId}`, {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ user_id: user.user_id }),
+    });
+    if (res.ok) setPosts(prev => prev.filter(p => p._id !== postId));
+  };
+
+  const toggleComments = (postId: string) => {
+    setOpenComments(prev => {
+      const next = new Set(prev);
+      next.has(postId) ? next.delete(postId) : next.add(postId);
+      return next;
+    });
+  };
+
+  const handleComment = async (postId: string) => {
+    const text = (commentTexts[postId] || "").trim();
+    if (!text) return;
+    const res = await fetch(`${API_URL}/posts/${postId}/comments`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        user_id: user.user_id,
+        author_name: user.name,
+        author_surname: user.surname,
+        text,
+      }),
+    });
+    if (res.ok) {
+      const data = await res.json();
+      setPosts(prev => prev.map(p =>
+        p._id === postId
+          ? { ...p, comments: [...p.comments, data.comment], comments_count: data.comments_count }
+          : p
+      ));
+      setCommentTexts(prev => ({ ...prev, [postId]: "" }));
+    }
+  };
+
+  const handleDeleteComment = async (postId: string, commentId: string) => {
+    const res = await fetch(`${API_URL}/posts/${postId}/comments/${commentId}`, {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ user_id: user.user_id }),
+    });
+    if (res.ok) {
+      const data = await res.json();
+      setPosts(prev => prev.map(p =>
+        p._id === postId
+          ? { ...p, comments: p.comments.filter(c => c._id !== commentId), comments_count: data.comments_count }
+          : p
+      ));
+    }
+  };
+
+  const userInitials = (name: string, surname: string) =>
+    `${name[0] ?? ""}${surname[0] ?? ""}`.toUpperCase();
+
+  const avatarFallback = (name: string, surname: string, photoUrl: string | null) => {
+    if (photoUrl) return <img src={photoUrl} alt={name} className="w-full h-full rounded-full object-cover" />;
+    return (
+      <div className="w-full h-full rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold text-sm">
+        {userInitials(name, surname)}
+      </div>
+    );
   };
 
   return (
     <div className="max-w-2xl mx-auto py-8 px-4 space-y-4">
       {/* Composer */}
       <div className="bg-card rounded-2xl border border-border p-4">
-        <div className="flex items-center gap-3 mb-3">
-          <img src={ME.avatar} alt={ME.name} className="w-10 h-10 rounded-full object-cover" />
-          <textarea
-            value={newPost}
-            onChange={(e) => setNewPost(e.target.value)}
-            placeholder="¿Qué querés compartir hoy?"
-            rows={2}
-            className="flex-1 bg-input-background rounded-xl px-4 py-2.5 text-sm resize-none outline-none focus:ring-2 focus:ring-primary/20 transition"
-          />
-        </div>
-        <div className="flex items-center justify-between">
-          <div className="flex gap-2">
-            <button className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1.5 px-3 py-1.5 rounded-lg hover:bg-muted transition-colors">
-              <Paperclip size={14} /> Adjuntar
-            </button>
-            <button className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1.5 px-3 py-1.5 rounded-lg hover:bg-muted transition-colors">
-              <Smile size={14} /> Emoji
-            </button>
+        <div className="flex items-start gap-3 mb-3">
+          <div className="w-10 h-10 shrink-0">
+            {avatarFallback(user.name, user.surname ?? "", user.profile_photo_url)}
           </div>
+          <div className="flex-1 space-y-2">
+            <textarea
+              value={newPost}
+              onChange={(e) => setNewPost(e.target.value)}
+              placeholder="¿Qué querés compartir hoy?"
+              rows={2}
+              className="w-full bg-input-background rounded-xl px-4 py-2.5 text-sm resize-none outline-none focus:ring-2 focus:ring-primary/20 transition"
+            />
+            <input
+              value={newTags}
+              onChange={(e) => setNewTags(e.target.value)}
+              placeholder="Tags separados por coma (ej: React, Python)"
+              className="w-full bg-input-background rounded-xl px-4 py-2 text-xs outline-none focus:ring-2 focus:ring-primary/20 transition"
+            />
+          </div>
+        </div>
+        <div className="flex justify-end">
           <button
-            disabled={!newPost.trim()}
+            onClick={handlePost}
+            disabled={!newPost.trim() || posting}
             className="bg-primary text-primary-foreground text-sm font-semibold px-5 py-2 rounded-xl disabled:opacity-40 hover:opacity-90 transition-opacity"
           >
-            Publicar
+            {posting ? "Publicando..." : "Publicar"}
           </button>
         </div>
       </div>
 
       {/* Posts */}
-      {posts.map((post) => (
-        <article key={post.id} className="bg-card rounded-2xl border border-border overflow-hidden">
-          <div className="p-4">
-            <div className="flex items-start justify-between mb-3">
-              <div className="flex items-center gap-3">
-                <img src={post.author.avatar} alt={post.author.name} className="w-11 h-11 rounded-full object-cover" />
-                <div>
-                  <p className="font-semibold text-sm text-foreground">{post.author.name}</p>
-                  <p className="text-xs text-muted-foreground">{post.author.headline}</p>
-                  <p className="text-xs text-muted-foreground flex items-center gap-1 mt-0.5"><Clock size={10} /> {post.time}</p>
+      {loading && (
+        <div className="text-center text-sm text-muted-foreground py-8">Cargando publicaciones...</div>
+      )}
+      {!loading && posts.length === 0 && (
+        <div className="text-center text-sm text-muted-foreground py-8">
+          Aún no hay publicaciones. ¡Sé el primero en compartir algo!
+        </div>
+      )}
+      {posts.map((post) => {
+        const isOwner = post.user_id === user.user_id;
+        const commentsOpen = openComments.has(post._id);
+
+        return (
+          <article key={post._id} className="bg-card rounded-2xl border border-border overflow-hidden">
+            <div className="p-4">
+              <div className="flex items-start justify-between mb-3">
+                <div className="flex items-center gap-3">
+                  <div className="w-11 h-11 shrink-0">
+                    {avatarFallback(post.author_name, post.author_surname, post.author_photo_url)}
+                  </div>
+                  <div>
+                    <p className="font-semibold text-sm text-foreground">
+                      {post.author_name} {post.author_surname}
+                    </p>
+                    <p className="text-xs text-muted-foreground flex items-center gap-1 mt-0.5">
+                      <Clock size={10} />
+                      {new Date(post.created_at).toLocaleDateString("es-AR", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}
+                    </p>
+                  </div>
+                </div>
+                {isOwner && (
+                  <button
+                    onClick={() => handleDelete(post._id)}
+                    className="text-muted-foreground hover:text-destructive p-1.5 rounded-lg hover:bg-muted transition-colors"
+                    title="Eliminar post"
+                  >
+                    <Trash2 size={15} />
+                  </button>
+                )}
+              </div>
+
+              <p className="text-sm text-foreground leading-relaxed whitespace-pre-wrap">{post.content}</p>
+
+              {post.tags.length > 0 && (
+                <div className="flex flex-wrap gap-1.5 mt-2">
+                  {post.tags.map((t) => (
+                    <span key={t} className="text-xs text-primary font-medium">#{t}</span>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {post.media?.url && (
+              <img src={post.media.url} alt="Media" className="w-full h-52 object-cover" />
+            )}
+
+            <div className="px-4 py-2 border-t border-border flex items-center justify-between text-xs text-muted-foreground">
+              <span>{post.likes_count} {post.likes_count === 1 ? "reacción" : "reacciones"}</span>
+              <button onClick={() => toggleComments(post._id)} className="hover:underline">
+                {post.comments_count} {post.comments_count === 1 ? "comentario" : "comentarios"}
+              </button>
+            </div>
+
+            <div className="px-4 py-1 border-t border-border flex">
+              {([
+                { reaction: "like" as const, icon: ThumbsUp, label: "Me gusta" },
+                { reaction: null, icon: MessageCircle, label: "Comentar" },
+              ]).map(({ reaction, icon: Icon, label }) => {
+                const active = reaction ? post.user_liked : commentsOpen;
+                return (
+                  <button
+                    key={label}
+                    onClick={() => reaction ? handleLike(post._id) : toggleComments(post._id)}
+                    className={`flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-xs font-medium transition-colors ${
+                      active ? "text-primary" : "text-muted-foreground hover:text-foreground hover:bg-muted"
+                    }`}
+                  >
+                    <Icon size={15} className={active ? "fill-primary/20 stroke-primary" : ""} />
+                    {label}
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Comments section */}
+            {commentsOpen && (
+              <div className="border-t border-border px-4 py-3 space-y-3">
+                {post.comments.map((c) => (
+                  <div key={c._id} className="flex items-start gap-2.5">
+                    <div className="w-8 h-8 shrink-0">
+                      {avatarFallback(c.author_name, c.author_surname, null)}
+                    </div>
+                    <div className="flex-1 bg-muted rounded-xl px-3 py-2">
+                      <p className="text-xs font-semibold text-foreground">
+                        {c.author_name} {c.author_surname}
+                      </p>
+                      <p className="text-xs text-foreground mt-0.5">{c.text}</p>
+                    </div>
+                    {c.user_id === user.user_id && (
+                      <button
+                        onClick={() => handleDeleteComment(post._id, c._id)}
+                        className="text-muted-foreground hover:text-destructive mt-1"
+                      >
+                        <XIcon size={12} />
+                      </button>
+                    )}
+                  </div>
+                ))}
+                <div className="flex items-center gap-2">
+                  <div className="w-8 h-8 shrink-0">
+                    {avatarFallback(user.name, user.surname ?? "", user.profile_photo_url)}
+                  </div>
+                  <input
+                    value={commentTexts[post._id] ?? ""}
+                    onChange={(e) => setCommentTexts(prev => ({ ...prev, [post._id]: e.target.value }))}
+                    onKeyDown={(e) => e.key === "Enter" && handleComment(post._id)}
+                    placeholder="Escribí un comentario..."
+                    className="flex-1 bg-input-background rounded-xl px-3 py-2 text-xs outline-none focus:ring-2 focus:ring-primary/20"
+                  />
+                  <button
+                    onClick={() => handleComment(post._id)}
+                    disabled={!(commentTexts[post._id] ?? "").trim()}
+                    className="text-primary disabled:opacity-30"
+                  >
+                    <Send size={15} />
+                  </button>
                 </div>
               </div>
-              <button className="text-muted-foreground hover:text-foreground p-1.5 rounded-lg hover:bg-muted transition-colors">
-                <MoreHorizontal size={16} />
-              </button>
-            </div>
-            <p className="text-sm text-foreground leading-relaxed">{post.content}</p>
-            <div className="flex flex-wrap gap-1.5 mt-2">
-              {post.tags.map((t) => (
-                <span key={t} className="text-xs text-primary font-medium">#{t}</span>
-              ))}
-            </div>
-          </div>
-          {post.image && (
-            <img src={post.image} alt="Post" className="w-full h-52 object-cover" />
-          )}
-          <div className="px-4 py-2 border-t border-border flex items-center justify-between text-xs text-muted-foreground">
-            <span>{post.likes} reacciones</span>
-            <span>{post.comments} comentarios</span>
-          </div>
-          <div className="px-4 py-1 border-t border-border flex">
-            {[
-              { icon: ThumbsUp, label: "Me gusta", active: post.liked, action: () => toggleLike(post.id) },
-              { icon: MessageCircle, label: "Comentar" },
-              { icon: Share2, label: "Compartir" },
-            ].map(({ icon: Icon, label, active, action }) => (
-              <button
-                key={label}
-                onClick={action}
-                className={`flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-xs font-medium transition-colors ${
-                  active ? "text-primary" : "text-muted-foreground hover:text-foreground hover:bg-muted"
-                }`}
-              >
-                <Icon size={15} className={active ? "fill-primary" : ""} />
-                {label}
-              </button>
-            ))}
-          </div>
-        </article>
-      ))}
+            )}
+          </article>
+        );
+      })}
     </div>
   );
 }
@@ -1095,7 +1352,7 @@ function JobsPage({ user }: { user: UserSession }) {
     try {
       const res = await fetch(`${API_URL}/jobs`, {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...newJob, user_id: user.user_id, skill_names: newJob.skill_names }),
+        body: JSON.stringify({ ...newJob, user_id: user.user_id, company_id: user.company_id ?? null, skill_names: newJob.skill_names }),
       });
       const json = await res.json();
       if (res.ok) {
@@ -1575,17 +1832,23 @@ function NotificationsPage() {
 export default function App() {
   const [page, setPage] = useState<Page>("home");
   const [currentUser, setCurrentUser] = useState<UserSession | null>(null);
+  const [authInitialMode, setAuthInitialMode] = useState<AuthMode>("login");
 
   const handleLogin = (user: UserSession) => { setCurrentUser(user); setPage("feed"); };
   const handleLogout = () => { setCurrentUser(null); setPage("home"); };
 
   if (!currentUser) {
-    if (page === "home") return <LandingPage onGetStarted={() => setPage("auth")} />;
-    return <AuthPage onLogin={handleLogin} />;
+    if (page === "home") return (
+      <LandingPage
+        onLogin={() => { setAuthInitialMode("login"); setPage("auth"); }}
+        onRegister={() => { setAuthInitialMode("register"); setPage("auth"); }}
+      />
+    );
+    return <AuthPage onLogin={handleLogin} initialMode={authInitialMode} />;
   }
 
   const pageComponents: Record<string, JSX.Element> = {
-    feed: <FeedPage />,
+    feed: <FeedPage user={currentUser} />,
     profile: <ProfilePage user={currentUser} onUserUpdate={setCurrentUser} />,
     network: <NetworkPage />,
     jobs: <JobsPage user={currentUser!} />,
@@ -1597,7 +1860,7 @@ export default function App() {
     <div className="flex min-h-screen bg-background font-sans">
       <Sidebar page={page} setPage={setPage} onLogout={handleLogout} user={currentUser} />
       <main className="flex-1 overflow-y-auto">
-        {pageComponents[page] ?? <FeedPage />}
+        {pageComponents[page] ?? <FeedPage user={currentUser} />}
       </main>
     </div>
   );
