@@ -9,6 +9,7 @@ from datetime import datetime, timedelta, timezone
 
 from flask import Blueprint, request, jsonify
 from db import supabase, supabase_admin
+from db_mongo import get_db
 from routes.connections import create_user_node
 
 auth_bp = Blueprint("auth", __name__, url_prefix="/auth")
@@ -218,6 +219,39 @@ def delete_account(user_id):
     if not bcrypt.checkpw(password.encode("utf-8"), user_res.data[0]["password_hash"].encode("utf-8")):
         return jsonify({"error": "Contraseña incorrecta."}), 401
 
+    # Borrar en orden correcto para evitar FK violations
+    # 1. Obtener jobs del poster para borrar sus dependencias
+    jobs_res = supabase_admin.table("jobs").select("job_id").eq("poster_user_id", user_id).execute()
+    job_ids = [j["job_id"] for j in (jobs_res.data or [])]
+    for jid in job_ids:
+        supabase_admin.table("applications").delete().eq("job_id", jid).execute()
+        supabase_admin.table("job_skill").delete().eq("job_id", jid).execute()
+
+    # 2. Postulaciones del usuario como candidato
+    supabase_admin.table("applications").delete().eq("user_id", user_id).execute()
+
+    # 3. Empleos publicados por el usuario
+    supabase_admin.table("jobs").delete().eq("poster_user_id", user_id).execute()
+
+    # 4. Datos de perfil
+    supabase_admin.table("user_skill").delete().eq("user_id", user_id).execute()
+    supabase_admin.table("user_roles").delete().eq("user_id", user_id).execute()
+    supabase_admin.table("education").delete().eq("user_id", user_id).execute()
+    supabase_admin.table("work experience").delete().eq("user_id", user_id).execute()
+
+    # 5. Grupos
+    supabase_admin.table("group_members").delete().eq("user_id", user_id).execute()
+    supabase_admin.table("groups").delete().eq("admin_id", user_id).execute()
+
+    # 6. Posts y comentarios en MongoDB
+    try:
+        mongo_db = get_db()
+        mongo_db.posts.delete_many({"user_id": user_id})
+        mongo_db.comments.delete_many({"user_id": user_id})
+    except Exception as e:
+        print(f"[WARN] MongoDB delete user data: {e}")
+
+    # 7. Usuario
     supabase_admin.table("users").delete().eq("user_id", user_id).execute()
     return jsonify({"message": "Cuenta eliminada correctamente."}), 200
 

@@ -132,7 +132,18 @@ CREATE TABLE IF NOT EXISTS applications (
     CONSTRAINT unq_user_job UNIQUE (user_id, job_id)
 );
 
--- ── 5. GRUPOS ──────────────────────────────────────────────────
+-- ── 5. HISTORIAL DE POSTULACIONES ─────────────────────────────
+
+CREATE TABLE IF NOT EXISTS application_status_history (
+    history_id     SERIAL      PRIMARY KEY,
+    application_id VARCHAR(36) NOT NULL REFERENCES applications(application_id) ON DELETE CASCADE,
+    status         VARCHAR(50) NOT NULL,
+    changed_at     TIMESTAMP   DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_app_history_app ON application_status_history (application_id);
+
+-- ── 6. GRUPOS ──────────────────────────────────────────────────
 
 CREATE TABLE IF NOT EXISTS groups (
     group_id    VARCHAR(36)  PRIMARY KEY,
@@ -198,7 +209,8 @@ ALTER TABLE jobs          DISABLE ROW LEVEL SECURITY;
 ALTER TABLE job_skill     DISABLE ROW LEVEL SECURITY;
 ALTER TABLE applications  DISABLE ROW LEVEL SECURITY;
 ALTER TABLE groups        DISABLE ROW LEVEL SECURITY;
-ALTER TABLE group_members DISABLE ROW LEVEL SECURITY;
+ALTER TABLE group_members              DISABLE ROW LEVEL SECURITY;
+ALTER TABLE application_status_history DISABLE ROW LEVEL SECURITY;
 """
 
 

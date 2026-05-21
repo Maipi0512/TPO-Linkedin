@@ -871,6 +871,10 @@ function ProfilePage({ user, onUserUpdate }: { user: UserSession; onUserUpdate: 
   const [editing, setEditing] = useState(false);
   const [editForm, setEditForm] = useState({ name: "", surname: "", dni: "" });
   const [saving, setSaving] = useState(false);
+  const [deletePassword, setDeletePassword] = useState("");
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState("");
 
   // Forms para agregar items
   const [showExpForm, setShowExpForm] = useState(false);
@@ -1202,18 +1206,48 @@ function ProfilePage({ user, onUserUpdate }: { user: UserSession; onUserUpdate: 
       <div className="bg-card rounded-2xl border border-destructive/30 p-5">
         <h2 className="font-semibold text-destructive mb-1 flex items-center gap-2"><Shield size={16} /> Zona de peligro</h2>
         <p className="text-xs text-muted-foreground mb-3">Eliminar tu cuenta borra permanentemente todos tus datos: perfil, postulaciones, empleos y publicaciones.</p>
-        <button onClick={async () => {
-          const password = prompt("Ingresá tu contraseña para confirmar la eliminación:");
-          if (!password) return;
-          const res = await fetch(`${API_URL}/auth/delete-account/${user.user_id}`, {
-            method: "DELETE", headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ password }),
-          });
-          if (res.ok) { alert("Cuenta eliminada."); window.location.reload(); }
-          else { const d = await res.json().catch(() => ({})); alert(d.error || "Error al eliminar la cuenta."); }
-        }} className="text-sm bg-destructive/10 text-destructive border border-destructive/30 rounded-xl px-4 py-2 hover:bg-destructive/20 transition-colors font-semibold">
-          Eliminar mi cuenta
-        </button>
+        {!showDeleteConfirm ? (
+          <button onClick={() => setShowDeleteConfirm(true)} className="text-sm bg-destructive/10 text-destructive border border-destructive/30 rounded-xl px-4 py-2 hover:bg-destructive/20 transition-colors font-semibold">
+            Eliminar mi cuenta
+          </button>
+        ) : (
+          <div className="space-y-3 mt-2">
+            <p className="text-sm text-destructive font-medium">¿Estás seguro? Esta acción no se puede deshacer.</p>
+            <input
+              type="password"
+              placeholder="Ingresá tu contraseña para confirmar"
+              value={deletePassword}
+              onChange={(e) => setDeletePassword(e.target.value)}
+              className="w-full bg-input-background border border-destructive/40 rounded-xl px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-destructive/20 transition"
+            />
+            {deleteError && <p className="text-xs text-destructive bg-destructive/10 px-3 py-2 rounded-lg">{deleteError}</p>}
+            <div className="flex gap-2">
+              <button onClick={() => { setShowDeleteConfirm(false); setDeletePassword(""); setDeleteError(""); }} className="text-sm text-muted-foreground px-4 py-2 rounded-xl border border-border hover:bg-muted transition-colors">
+                Cancelar
+              </button>
+              <button
+                disabled={!deletePassword || deleting}
+                onClick={async () => {
+                  setDeleting(true);
+                  setDeleteError("");
+                  try {
+                    const res = await fetch(`${API_URL}/auth/delete-account/${user.user_id}`, {
+                      method: "DELETE", headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({ password: deletePassword }),
+                    });
+                    if (res.ok) { window.location.reload(); return; }
+                    const d = await res.json().catch(() => ({}));
+                    setDeleteError(d.error || "Error al eliminar la cuenta.");
+                  } catch { setDeleteError("No se pudo conectar con el servidor."); }
+                  setDeleting(false);
+                }}
+                className="text-sm bg-destructive text-white px-4 py-2 rounded-xl hover:opacity-90 transition-opacity disabled:opacity-50 font-semibold"
+              >
+                {deleting ? "Eliminando..." : "Confirmar eliminación"}
+              </button>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -1225,7 +1259,7 @@ type Suggestion = { user: Neo4jUser; mutuals: number };
 type PendingRequest = { user: Neo4jUser; created_at: string };
 type JobMatch = { job_id: string; matching_skills: string[]; match_count: number };
 
-function NetworkPage({ user, onNavigate }: { user: UserSession; onNavigate: (page: Page) => void }) {
+function NetworkPage({ user, onNavigate }: { user: UserSession; onNavigate: (page: Page, jobId?: string) => void }) {
   const [tab, setTab] = useState<"connections" | "pending" | "suggestions" | "job-matches">("connections");
   const [connections, setConnections] = useState<Neo4jUser[]>([]);
   const [pending, setPending] = useState<PendingRequest[]>([]);
@@ -1449,7 +1483,7 @@ function NetworkPage({ user, onNavigate }: { user: UserSession; onNavigate: (pag
                 return (
                   <div
                     key={m.job_id}
-                    onClick={() => onNavigate("jobs")}
+                    onClick={() => onNavigate("jobs", m.job_id)}
                     className="flex items-start gap-3 p-4 rounded-xl border border-border hover:bg-muted hover:border-primary/30 transition-colors cursor-pointer"
                   >
                     <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
@@ -1489,7 +1523,7 @@ function NetworkPage({ user, onNavigate }: { user: UserSession; onNavigate: (pag
 }
 
 // ─── Jobs Page ────────────────────────────────────────────────────────────────
-function JobsPage({ user }: { user: UserSession }) {
+function JobsPage({ user, pendingJobId, onClearPendingJob }: { user: UserSession; pendingJobId?: string | null; onClearPendingJob?: () => void }) {
   const [tab, setTab] = useState<"explore" | "applications" | "posted">("explore");
   const [jobs, setJobs] = useState<Job[]>([]);
   const [selected, setSelected] = useState<Job | null>(null);
@@ -1568,6 +1602,12 @@ function JobsPage({ user }: { user: UserSession }) {
     }, 15000);
     return () => clearInterval(interval);
   }, [user.user_id]);
+
+  useEffect(() => {
+    if (!pendingJobId || jobs.length === 0) return;
+    const job = jobs.find((j) => j.job_id === pendingJobId);
+    if (job) { setTab("explore"); setSelected(job); onClearPendingJob?.(); }
+  }, [pendingJobId, jobs]);
 
   useEffect(() => {
     if (!postedSelected) return;
@@ -2408,9 +2448,11 @@ export default function App() {
   const [page, setPage] = useState<Page>("home");
   const [currentUser, setCurrentUser] = useState<UserSession | null>(null);
   const [authInitialMode, setAuthInitialMode] = useState<AuthMode>("login");
+  const [pendingJobId, setPendingJobId] = useState<string | null>(null);
 
   const handleLogin = (user: UserSession) => { setCurrentUser(user); setPage("feed"); };
   const handleLogout = () => { setCurrentUser(null); setPage("home"); };
+  const handleNavigate = (p: Page, jobId?: string) => { setPage(p); if (jobId) setPendingJobId(jobId); };
 
   if (!currentUser) {
     if (page === "home") return (
@@ -2425,8 +2467,8 @@ export default function App() {
   const pageComponents: Record<string, JSX.Element> = {
     feed: <FeedPage user={currentUser} />,
     profile: <ProfilePage user={currentUser} onUserUpdate={setCurrentUser} />,
-    network: <NetworkPage user={currentUser} onNavigate={setPage} />,
-    jobs: <JobsPage user={currentUser!} />,
+    network: <NetworkPage user={currentUser} onNavigate={handleNavigate} />,
+    jobs: <JobsPage user={currentUser!} pendingJobId={pendingJobId} onClearPendingJob={() => setPendingJobId(null)} />,
     groups: <GroupsPage user={currentUser} />,
     messages: <MessagesPage />,
     notifications: <NotificationsPage user={currentUser} />,

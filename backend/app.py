@@ -15,7 +15,11 @@ from routes.connections import connections_bp
 from init_db import init_db
 
 app = Flask(__name__)
-CORS(app, origins=["http://localhost:5173", "http://127.0.0.1:5173"])
+CORS(app,
+     origins=["http://localhost:5173", "http://127.0.0.1:5173"],
+     methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+     allow_headers=["Content-Type", "Authorization"],
+     supports_credentials=False)
 
 app.register_blueprint(auth_bp)
 app.register_blueprint(profile_bp)
@@ -32,6 +36,14 @@ init_db()
 @app.route("/health")
 def health():
     return jsonify({"status": "ok"}), 200
+
+
+@app.after_request
+def add_cors_headers(response):
+    response.headers["Access-Control-Allow-Origin"] = "*"
+    response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, PATCH, DELETE, OPTIONS"
+    response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
+    return response
 
 
 if __name__ == "__main__":
