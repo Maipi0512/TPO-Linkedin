@@ -11,6 +11,7 @@ from routes.jobs import jobs_bp
 from routes.posts import posts_bp
 from routes.notifications import notifications_bp
 from routes.groups import groups_bp
+from routes.connections import connections_bp
 from init_db import init_db
 
 app = Flask(__name__)
@@ -22,6 +23,7 @@ app.register_blueprint(jobs_bp)
 app.register_blueprint(posts_bp)
 app.register_blueprint(notifications_bp)
 app.register_blueprint(groups_bp)
+app.register_blueprint(connections_bp)
 
 # Crea las tablas SQL en Supabase al arrancar si no existen
 init_db()

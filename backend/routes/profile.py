@@ -2,6 +2,7 @@ import uuid
 from datetime import datetime, timezone
 from flask import Blueprint, request, jsonify
 from db import supabase_admin
+from routes.connections import add_user_skill, remove_user_skill
 
 AVATAR_BUCKET = "avatars"
 
@@ -229,10 +230,20 @@ def add_skill(user_id):
     supabase_admin.table("user_skill").upsert(
         {"user_id": user_id, "skill_id": skill_id, "level": level}
     ).execute()
+
+    # Sincronizar con Neo4j: buscar el nombre del skill para crear [:HAS_SKILL]
+    skill_name_res = supabase_admin.table("skills").select("name").eq("skill_id", skill_id).limit(1).execute()
+    if skill_name_res.data:
+        add_user_skill(user_id, skill_name_res.data[0]["name"], level)
+
     return jsonify({"ok": True}), 201
 
 
 @profile_bp.route("/<user_id>/skills/<int:skill_id>", methods=["DELETE"])
 def remove_skill(user_id, skill_id):
+    # Obtener nombre antes de borrar para sincronizar Neo4j
+    skill_name_res = supabase_admin.table("skills").select("name").eq("skill_id", skill_id).limit(1).execute()
     supabase_admin.table("user_skill").delete().eq("user_id", user_id).eq("skill_id", skill_id).execute()
+    if skill_name_res.data:
+        remove_user_skill(user_id, skill_name_res.data[0]["name"])
     return jsonify({"ok": True}), 200

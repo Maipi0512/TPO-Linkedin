@@ -2,6 +2,7 @@ import uuid
 from flask import Blueprint, request, jsonify
 from db import supabase_admin
 from routes.notifications import create_notification
+from routes.connections import create_job_node, delete_job_node
 
 jobs_bp = Blueprint("jobs", __name__, url_prefix="/jobs")
 
@@ -62,6 +63,9 @@ def create_job():
             [{"job_id": job["job_id"], "skill_id": sid} for sid in skill_ids_to_add]
         ).execute()
 
+    # Sincronizar con Neo4j: crear nodo :Job y relaciones [:REQUIRES_SKILL]
+    create_job_node(job["job_id"], [s.strip() for s in skill_names if s.strip()])
+
     return jsonify(job), 201
 
 
@@ -90,6 +94,8 @@ def delete_job(job_id):
     if job.data[0]["poster_user_id"] != user_id:
         return jsonify({"error": "No tenés permiso para eliminar esta oferta."}), 403
     supabase_admin.table("jobs").delete().eq("job_id", job_id).execute()
+    # Sincronizar con Neo4j: eliminar nodo :Job y sus relaciones
+    delete_job_node(job_id)
     return jsonify({"ok": True}), 200
 
 
@@ -103,6 +109,12 @@ def update_application(app_id):
     if status not in valid:
         return jsonify({"error": f"Estado inválido. Válidos: {valid}"}), 400
     supabase_admin.table("applications").update({"status": status}).eq("application_id", app_id).execute()
+
+    # Registrar en historial de estados
+    supabase_admin.table("application_status_history").insert({
+        "application_id": app_id,
+        "status": status,
+    }).execute()
 
     # Notificar al candidato del cambio de estado
     app_res = supabase_admin.table("applications").select("user_id, job_id, jobs(title)").eq("application_id", app_id).limit(1).execute()
@@ -121,6 +133,18 @@ def update_application(app_id):
         )
 
     return jsonify({"ok": True}), 200
+
+
+@jobs_bp.route("/applications/<app_id>/history", methods=["GET"])
+def get_application_history(app_id):
+    res = (
+        supabase_admin.table("application_status_history")
+        .select("status, changed_at")
+        .eq("application_id", app_id)
+        .order("changed_at", desc=False)
+        .execute()
+    )
+    return jsonify(res.data), 200
 
 
 @jobs_bp.route("/<job_id>/apply", methods=["POST"])

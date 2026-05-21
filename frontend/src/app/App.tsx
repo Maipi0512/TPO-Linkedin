@@ -1,10 +1,10 @@
 import { useState, useRef, useEffect, type JSX } from "react";
 import {
   Home, Users, Briefcase, MessageSquare, Bell, User, LogOut, Search,
-  Heart, MessageCircle, Share2, ThumbsUp, Send, Plus, ChevronRight,
+  MessageCircle, ThumbsUp, Send, Plus,
   CheckCircle, Clock, MapPin, Building2, GraduationCap, Star, X as XIcon,
-  MoreHorizontal, Paperclip, Smile, Check, CheckCheck, Edit3, Trash2,
-  UserPlus, UserCheck, Filter, ArrowRight, Shield, Zap, Globe, Lock, UsersRound
+  Paperclip, Check, CheckCheck, Edit3, Trash2,
+  UserPlus, UserCheck, ArrowRight, Shield, Zap, Globe, UsersRound
 } from "lucide-react";
 
 const API_URL = "http://localhost:5000";
@@ -23,6 +23,7 @@ type Job = {
   job_skill: { skills: { skill_id: number; name: string; type: string } }[];
 };
 type AppStatus = "submitted" | "in_review" | "in_process" | "successful" | "rejected";
+type AppHistoryEntry = { status: string; changed_at: string };
 type Application = {
   application_id: string; job_id: string; user_id: string;
   status: AppStatus; applied_at: string; updated_at: string;
@@ -98,63 +99,6 @@ type UserGroup = {
   groups: Group;
 };
 
-const ME = {
-  id: 1,
-  name: "Valentina Bentivegna",
-  headline: "Desarrolladora Full Stack · React & Node.js",
-  location: "Buenos Aires, Argentina",
-  avatar: "https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=80&h=80&fit=crop&auto=format",
-  connections: 312,
-  role: ["candidato", "poster"] as string[],
-};
-
-const POSTS = [
-  {
-    id: 1,
-    author: { name: "Lucía Fernández", headline: "Product Manager · Mercado Libre", avatar: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=48&h=48&fit=crop&auto=format" },
-    time: "hace 2 horas",
-    content: "Acabo de terminar de leer 'Inspired' de Marty Cagan y me parece uno de los mejores libros sobre Product Management que existen. Si están pensando en hacer la transición a PM, es una lectura obligatoria. ¿Alguno lo leyó? ¿Qué otros libros recomendarían?",
-    likes: 87,
-    comments: 14,
-    liked: false,
-    tags: ["ProductManagement", "Libros"],
-  },
-  {
-    id: 2,
-    author: { name: "Matías Gómez", headline: "Tech Lead · Globant", avatar: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=48&h=48&fit=crop&auto=format" },
-    time: "hace 5 horas",
-    content: "Hoy lanzamos en producción nuestra nueva arquitectura de microservicios. Seis meses de trabajo del equipo, muchos cafés y algún que otro viernes noche. El resultado: latencia reducida un 40%, y un sistema mucho más resiliente. Enormemente orgulloso de cada integrante del equipo.",
-    image: "https://images.unsplash.com/photo-1551288049-bebda4e38f71?w=600&h=300&fit=crop&auto=format",
-    likes: 234,
-    comments: 31,
-    liked: true,
-    tags: ["Microservicios", "Arquitectura", "DevOps"],
-  },
-  {
-    id: 3,
-    author: { name: "Camila Rodríguez", headline: "UX Designer · Despegar", avatar: "https://images.unsplash.com/photo-1438761681033-6461ffad8d80?w=48&h=48&fit=crop&auto=format" },
-    time: "hace 1 día",
-    content: "El diseño centrado en el usuario no es solo hacer pantallas bonitas. Es entender profundamente los problemas de las personas y construir soluciones que realmente los resuelvan. Esta semana hicimos 12 entrevistas con usuarios y aprendí más que en meses de research secundario.",
-    likes: 156,
-    comments: 22,
-    liked: false,
-    tags: ["UX", "UserResearch", "Design"],
-  },
-];
-
-const CONNECTIONS = [
-  { id: 1, name: "Morena Escudero", headline: "Data Scientist · Accenture", avatar: "https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=56&h=56&fit=crop&auto=format", mutuals: 18, company: "Accenture" },
-  { id: 2, name: "Megan Rodríguez", headline: "Backend Engineer · MercadoPago", avatar: "https://images.unsplash.com/photo-1580489944761-15a19d654956?w=56&h=56&fit=crop&auto=format", mutuals: 24, company: "MercadoPago" },
-  { id: 3, name: "Melanie Rodríguez", headline: "DevOps Engineer · AWS", avatar: "https://images.unsplash.com/photo-1531746020798-e6953c6e8e04?w=56&h=56&fit=crop&auto=format", mutuals: 9, company: "AWS" },
-];
-
-const SUGGESTIONS = [
-  { id: 4, name: "Diego Herrera", headline: "iOS Developer · Naranja X", avatar: "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=56&h=56&fit=crop&auto=format", mutuals: 7 },
-  { id: 5, name: "Ana Paula Silva", headline: "QA Engineer · Santander", avatar: "https://images.unsplash.com/photo-1487412720507-e7ab37603c6f?w=56&h=56&fit=crop&auto=format", mutuals: 3 },
-  { id: 6, name: "Facundo Torres", headline: "Mobile Dev · OLX", avatar: "https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=56&h=56&fit=crop&auto=format", mutuals: 11 },
-];
-
-
 const CONVERSATIONS = [
   {
     id: 1, name: "Matías Gómez", avatar: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=48&h=48&fit=crop&auto=format",
@@ -185,15 +129,6 @@ const CONVERSATIONS = [
       { id: 3, from: "other", sender: "Diego", text: "¿Alguien va al meetup de Vue?", time: "mar 16:00", status: "sent" },
     ],
   },
-];
-
-const NOTIFICATIONS = [
-  { id: 1, type: "connection", text: "Diego Herrera te envió una solicitud de conexión", time: "hace 30 min", read: false, avatar: "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=40&h=40&fit=crop&auto=format" },
-  { id: 2, type: "like", text: "Matías Gómez y 12 personas más reaccionaron a tu publicación", time: "hace 2 horas", read: false, avatar: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=40&h=40&fit=crop&auto=format" },
-  { id: 3, type: "comment", text: "Lucía Fernández comentó en tu publicación: '¡Excelente punto!'", time: "hace 3 horas", read: false, avatar: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=40&h=40&fit=crop&auto=format" },
-  { id: 4, type: "job", text: "Tu postulación a Senior React Developer en Globant cambió a In Review", time: "ayer", read: true, avatar: "https://images.unsplash.com/photo-1568598035424-7070b67317d2?w=40&h=40&fit=crop&auto=format" },
-  { id: 5, type: "connection", text: "Ana Paula Silva aceptó tu solicitud de conexión", time: "ayer", read: true, avatar: "https://images.unsplash.com/photo-1487412720507-e7ab37603c6f?w=40&h=40&fit=crop&auto=format" },
-  { id: 6, type: "message", text: "Tienes un nuevo mensaje de Camila Rodríguez", time: "hace 2 días", read: true, avatar: "https://images.unsplash.com/photo-1438761681033-6461ffad8d80?w=40&h=40&fit=crop&auto=format" },
 ];
 
 // ─── Sidebar ────────────────────────────────────────────────────────────────
@@ -1090,6 +1025,7 @@ function ProfilePage({ user, onUserUpdate }: { user: UserSession; onUserUpdate: 
         </div>
       </div>
 
+      {user.roles.includes("candidato") && <>
       {/* Experiencia */}
       <div className="bg-card rounded-2xl border border-border p-5">
         <div className="flex items-center justify-between mb-4">
@@ -1230,85 +1166,324 @@ function ProfilePage({ user, onUserUpdate }: { user: UserSession; onUserUpdate: 
           ))}
         </div>
       </div>
+      </>}
+
+      {/* RF2 — Gestión de roles */}
+      <div className="bg-card rounded-2xl border border-border p-5">
+        <h2 className="font-semibold text-foreground mb-1 flex items-center gap-2"><Shield size={16} className="text-primary" /> Roles</h2>
+        <p className="text-xs text-muted-foreground mb-3">Tus roles activos condicionan las funcionalidades disponibles.</p>
+        <div className="flex flex-wrap gap-2 mb-3">
+          {user.roles.map((r) => (
+            <span key={r} className="bg-primary/10 text-primary text-xs font-semibold px-3 py-1.5 rounded-full capitalize">{r}</span>
+          ))}
+        </div>
+        {!user.roles.includes("candidato") && (
+          <button onClick={async () => {
+            const res = await fetch(`${API_URL}/auth/add-role`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ user_id: user.user_id, role: "candidato" }) });
+            if (res.ok) { const data = await res.json(); onUserUpdate({ ...user, roles: data.roles }); }
+          }} className="text-sm border border-border rounded-xl px-4 py-2 hover:bg-muted transition-colors mr-2">
+            Agregar rol Candidato
+          </button>
+        )}
+        {!user.roles.includes("poster") && (
+          <button onClick={async () => {
+            const res = await fetch(`${API_URL}/auth/add-role`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ user_id: user.user_id, role: "poster" }) });
+            if (res.ok) { const data = await res.json(); onUserUpdate({ ...user, roles: data.roles }); }
+          }} className="text-sm border border-border rounded-xl px-4 py-2 hover:bg-muted transition-colors">
+            Agregar rol Poster
+          </button>
+        )}
+        {user.roles.includes("candidato") && user.roles.includes("poster") && (
+          <p className="text-xs text-muted-foreground">Tenés ambos roles activos.</p>
+        )}
+      </div>
+
+      {/* RNF10 — Eliminar cuenta */}
+      <div className="bg-card rounded-2xl border border-destructive/30 p-5">
+        <h2 className="font-semibold text-destructive mb-1 flex items-center gap-2"><Shield size={16} /> Zona de peligro</h2>
+        <p className="text-xs text-muted-foreground mb-3">Eliminar tu cuenta borra permanentemente todos tus datos: perfil, postulaciones, empleos y publicaciones.</p>
+        <button onClick={async () => {
+          const password = prompt("Ingresá tu contraseña para confirmar la eliminación:");
+          if (!password) return;
+          const res = await fetch(`${API_URL}/auth/delete-account/${user.user_id}`, {
+            method: "DELETE", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ password }),
+          });
+          if (res.ok) { alert("Cuenta eliminada."); window.location.reload(); }
+          else { const d = await res.json().catch(() => ({})); alert(d.error || "Error al eliminar la cuenta."); }
+        }} className="text-sm bg-destructive/10 text-destructive border border-destructive/30 rounded-xl px-4 py-2 hover:bg-destructive/20 transition-colors font-semibold">
+          Eliminar mi cuenta
+        </button>
+      </div>
     </div>
   );
 }
 
 // ─── Network Page ─────────────────────────────────────────────────────────────
-function NetworkPage() {
-  const [connected, setConnected] = useState<number[]>([]);
-  const [search, setSearch] = useState("");
+type Neo4jUser = { user_id: string; name: string; surname: string; photo_url: string };
+type Suggestion = { user: Neo4jUser; mutuals: number };
+type PendingRequest = { user: Neo4jUser; created_at: string };
+type JobMatch = { job_id: string; matching_skills: string[]; match_count: number };
 
-  const filtered = SUGGESTIONS.filter((s) =>
-    s.name.toLowerCase().includes(search.toLowerCase()) || s.headline.toLowerCase().includes(search.toLowerCase())
+function NetworkPage({ user, onNavigate }: { user: UserSession; onNavigate: (page: Page) => void }) {
+  const [tab, setTab] = useState<"connections" | "pending" | "suggestions" | "job-matches">("connections");
+  const [connections, setConnections] = useState<Neo4jUser[]>([]);
+  const [pending, setPending] = useState<PendingRequest[]>([]);
+  const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
+  const [jobMatches, setJobMatches] = useState<JobMatch[]>([]);
+  const [jobDetails, setJobDetails] = useState<Record<string, Job>>({});
+  const [sentIds, setSentIds] = useState<Set<string>>(new Set());
+  const [search, setSearch] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  const loadAll = async () => {
+    setLoading(true);
+    try {
+      const [connRes, pendRes, sugRes, sentRes, matchRes, jobsRes] = await Promise.all([
+        fetch(`${API_URL}/connections/${user.user_id}`),
+        fetch(`${API_URL}/connections/${user.user_id}/pending`),
+        fetch(`${API_URL}/connections/${user.user_id}/suggestions`),
+        fetch(`${API_URL}/connections/${user.user_id}/sent`),
+        fetch(`${API_URL}/connections/${user.user_id}/job-matches`),
+        fetch(`${API_URL}/jobs`),
+      ]);
+      if (connRes.ok) setConnections(await connRes.json());
+      if (pendRes.ok) setPending(await pendRes.json());
+      if (sugRes.ok) setSuggestions(await sugRes.json());
+      if (matchRes.ok) setJobMatches(await matchRes.json());
+      if (jobsRes.ok) {
+        const jobs: Job[] = await jobsRes.json();
+        setJobDetails(Object.fromEntries(jobs.map((j) => [j.job_id, j])));
+      }
+      if (sentRes.ok) {
+        const sent: Neo4jUser[] = await sentRes.json();
+        setSentIds(new Set(sent.map((u) => u.user_id)));
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => { loadAll(); }, []);
+
+  const handleConnect = async (toUserId: string) => {
+    const res = await fetch(`${API_URL}/connections/request`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ from_user_id: user.user_id, to_user_id: toUserId }),
+    });
+    if (res.ok) setSentIds((prev) => new Set([...prev, toUserId]));
+  };
+
+  const handleAccept = async (fromUserId: string) => {
+    const res = await fetch(`${API_URL}/connections/accept`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ from_user_id: fromUserId, to_user_id: user.user_id }),
+    });
+    if (res.ok) loadAll();
+  };
+
+  const handleReject = async (fromUserId: string) => {
+    const res = await fetch(`${API_URL}/connections/reject`, {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ from_user_id: fromUserId, to_user_id: user.user_id }),
+    });
+    if (res.ok) setPending((prev) => prev.filter((p) => p.user.user_id !== fromUserId));
+  };
+
+  const handleRemove = async (otherId: string) => {
+    const res = await fetch(`${API_URL}/connections/remove`, {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ user_id: user.user_id, other_user_id: otherId }),
+    });
+    if (res.ok) setConnections((prev) => prev.filter((c) => c.user_id !== otherId));
+  };
+
+  const avatar = (u: Neo4jUser) => u.photo_url ? (
+    <img src={u.photo_url} alt={u.name} className="w-11 h-11 rounded-full object-cover shrink-0" />
+  ) : (
+    <div className="w-11 h-11 rounded-full bg-primary/20 flex items-center justify-center text-primary font-bold shrink-0">{u.name[0]}</div>
   );
+
+  const fullName = (u: Neo4jUser) => `${u.name}${u.surname ? ` ${u.surname}` : ""}`;
+
+  const filteredConn = connections.filter((c) => fullName(c).toLowerCase().includes(search.toLowerCase()));
+  const filteredSug = suggestions.filter((s) => fullName(s.user).toLowerCase().includes(search.toLowerCase()));
 
   return (
     <div className="max-w-3xl mx-auto py-8 px-4 space-y-6">
-      {/* Connections */}
-      <div className="bg-card rounded-2xl border border-border p-5">
-        <h2 className="font-semibold text-foreground mb-4 flex items-center gap-2">
-          <UserCheck size={17} className="text-primary" />
-          Mis conexiones <span className="text-muted-foreground font-normal text-sm">({CONNECTIONS.length})</span>
-        </h2>
-        <div className="space-y-3">
-          {CONNECTIONS.map((c) => (
-            <div key={c.id} className="flex items-center gap-3 p-3 rounded-xl hover:bg-muted transition-colors">
-              <img src={c.avatar} alt={c.name} className="w-12 h-12 rounded-full object-cover" />
-              <div className="flex-1">
-                <p className="font-semibold text-sm text-foreground">{c.name}</p>
-                <p className="text-xs text-muted-foreground">{c.headline}</p>
-                <p className="text-xs text-muted-foreground">{c.mutuals} contactos en común</p>
-              </div>
-              <button className="text-sm text-primary font-medium flex items-center gap-1 hover:underline">
-                Ver perfil <ChevronRight size={14} />
-              </button>
-            </div>
-          ))}
-        </div>
+      {/* Tabs */}
+      <div className="flex gap-1 bg-muted rounded-xl p-1">
+        {([ ["connections", `Conexiones (${connections.length})`], ["pending", `Solicitudes${pending.length ? ` (${pending.length})` : ""}`], ["suggestions", "Sugerencias"], ["job-matches", `Empleos recomendados${jobMatches.length ? ` (${jobMatches.length})` : ""}`] ] as const).map(([id, label]) => (
+          <button key={id} onClick={() => setTab(id)} className={`flex-1 py-2 rounded-lg text-sm font-medium transition-colors ${tab === id ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"}`}>
+            {label}
+          </button>
+        ))}
       </div>
 
-      {/* Suggestions */}
-      <div className="bg-card rounded-2xl border border-border p-5">
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="font-semibold text-foreground flex items-center gap-2">
-            <UserPlus size={17} className="text-primary" />
-            Personas que quizás conozcas
-          </h2>
-          <div className="relative">
-            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
-            <input
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Buscar..."
-              className="bg-input-background border border-border rounded-xl pl-8 pr-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/20 transition w-44"
-            />
-          </div>
-        </div>
-        <div className="grid grid-cols-3 gap-4">
-          {filtered.map((s) => (
-            <div key={s.id} className="border border-border rounded-2xl overflow-hidden text-center hover:shadow-md transition-shadow">
-              <div className="h-14 bg-gradient-to-r from-primary/20 to-primary/10" />
-              <div className="-mt-7 pb-4 px-3">
-                <img src={s.avatar} alt={s.name} className="w-14 h-14 rounded-full object-cover mx-auto ring-2 ring-card" />
-                <p className="font-semibold text-sm text-foreground mt-2 leading-tight">{s.name}</p>
-                <p className="text-xs text-muted-foreground mt-0.5 leading-tight">{s.headline}</p>
-                <p className="text-xs text-muted-foreground mt-1">{s.mutuals} en común</p>
-                <button
-                  onClick={() => setConnected((prev) => prev.includes(s.id) ? prev.filter((id) => id !== s.id) : [...prev, s.id])}
-                  className={`w-full mt-3 py-2 rounded-xl text-sm font-semibold transition-colors ${
-                    connected.includes(s.id)
-                      ? "bg-muted text-muted-foreground"
-                      : "bg-primary text-primary-foreground hover:opacity-90"
-                  }`}
-                >
-                  {connected.includes(s.id) ? "Solicitud enviada" : "Conectar"}
-                </button>
-              </div>
+      {loading && <p className="text-center text-muted-foreground text-sm py-8">Cargando...</p>}
+
+      {/* Mis conexiones */}
+      {!loading && tab === "connections" && (
+        <div className="bg-card rounded-2xl border border-border p-5">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="font-semibold text-foreground flex items-center gap-2">
+              <UserCheck size={17} className="text-primary" /> Mis conexiones
+            </h2>
+            <div className="relative">
+              <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+              <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Buscar..." className="bg-input-background border border-border rounded-xl pl-8 pr-3 py-1.5 text-sm outline-none focus:ring-2 focus:ring-primary/20 w-40" />
             </div>
-          ))}
+          </div>
+          {filteredConn.length === 0 ? (
+            <p className="text-muted-foreground text-sm text-center py-6">Aún no tenés conexiones.</p>
+          ) : (
+            <div className="space-y-3">
+              {filteredConn.map((c) => (
+                <div key={c.user_id} className="flex items-center gap-3 p-3 rounded-xl hover:bg-muted transition-colors">
+                  {avatar(c)}
+                  <div className="flex-1 min-w-0">
+                    <p className="font-semibold text-sm text-foreground truncate">{fullName(c)}</p>
+                  </div>
+                  <button onClick={() => handleRemove(c.user_id)} className="text-xs text-muted-foreground border border-border rounded-lg px-3 py-1.5 hover:bg-muted transition-colors">
+                    Eliminar
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
-      </div>
+      )}
+
+      {/* Solicitudes recibidas */}
+      {!loading && tab === "pending" && (
+        <div className="bg-card rounded-2xl border border-border p-5">
+          <h2 className="font-semibold text-foreground mb-4 flex items-center gap-2">
+            <UserPlus size={17} className="text-primary" /> Solicitudes de conexión
+          </h2>
+          {pending.length === 0 ? (
+            <p className="text-muted-foreground text-sm text-center py-6">No tenés solicitudes pendientes.</p>
+          ) : (
+            <div className="space-y-3">
+              {pending.map((p) => (
+                <div key={p.user.user_id} className="flex items-center gap-3 p-3 rounded-xl hover:bg-muted transition-colors">
+                  {avatar(p.user)}
+                  <div className="flex-1 min-w-0">
+                    <p className="font-semibold text-sm text-foreground truncate">{fullName(p.user)}</p>
+                  </div>
+                  <div className="flex gap-2">
+                    <button onClick={() => handleAccept(p.user.user_id)} className="text-xs bg-primary text-primary-foreground rounded-lg px-3 py-1.5 font-semibold hover:opacity-90 transition-opacity">
+                      Aceptar
+                    </button>
+                    <button onClick={() => handleReject(p.user.user_id)} className="text-xs border border-border rounded-lg px-3 py-1.5 text-muted-foreground hover:bg-muted transition-colors">
+                      Rechazar
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Sugerencias */}
+      {!loading && tab === "suggestions" && (
+        <div className="bg-card rounded-2xl border border-border p-5">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="font-semibold text-foreground flex items-center gap-2">
+              <UserPlus size={17} className="text-primary" /> Personas que quizás conozcas
+            </h2>
+            <div className="relative">
+              <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+              <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Buscar..." className="bg-input-background border border-border rounded-xl pl-8 pr-3 py-1.5 text-sm outline-none focus:ring-2 focus:ring-primary/20 w-40" />
+            </div>
+          </div>
+          {filteredSug.length === 0 ? (
+            <p className="text-muted-foreground text-sm text-center py-6">No hay sugerencias disponibles.</p>
+          ) : (
+            <div className="grid grid-cols-3 gap-4">
+              {filteredSug.map(({ user: s, mutuals }) => (
+                <div key={s.user_id} className="border border-border rounded-2xl overflow-hidden text-center hover:shadow-md transition-shadow">
+                  <div className="h-14 bg-gradient-to-r from-primary/20 to-primary/10" />
+                  <div className="-mt-7 pb-4 px-3">
+                    {s.photo_url ? (
+                      <img src={s.photo_url} alt={s.name} className="w-14 h-14 rounded-full object-cover mx-auto ring-2 ring-card" />
+                    ) : (
+                      <div className="w-14 h-14 rounded-full bg-primary/20 flex items-center justify-center text-primary font-bold text-lg mx-auto ring-2 ring-card">{s.name[0]}</div>
+                    )}
+                    <p className="font-semibold text-sm text-foreground mt-2 leading-tight">{fullName(s)}</p>
+                    {mutuals > 0 && <p className="text-xs text-muted-foreground mt-1">{mutuals} contacto{mutuals !== 1 ? "s" : ""} en común</p>}
+                    <button
+                      onClick={() => handleConnect(s.user_id)}
+                      disabled={sentIds.has(s.user_id)}
+                      className={`w-full mt-3 py-2 rounded-xl text-sm font-semibold transition-colors disabled:opacity-60 ${sentIds.has(s.user_id) ? "bg-muted text-muted-foreground" : "bg-primary text-primary-foreground hover:opacity-90"}`}
+                    >
+                      {sentIds.has(s.user_id) ? "Solicitud enviada" : "Conectar"}
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Empleos recomendados por Neo4j */}
+      {!loading && tab === "job-matches" && (
+        <div className="bg-card rounded-2xl border border-border p-5">
+          <h2 className="font-semibold text-foreground mb-1 flex items-center gap-2">
+            <Zap size={17} className="text-primary" /> Empleos recomendados por tus habilidades
+          </h2>
+          <p className="text-xs text-muted-foreground mb-4">Calculado por Neo4j cruzando tus skills con los requerimientos de cada oferta.</p>
+          {jobMatches.length === 0 ? (
+            <p className="text-muted-foreground text-sm text-center py-6">
+              Agregá habilidades a tu perfil para ver empleos recomendados.
+            </p>
+          ) : (
+            <div className="space-y-3">
+              {jobMatches.map((m) => {
+                const job = jobDetails[m.job_id];
+                return (
+                  <div
+                    key={m.job_id}
+                    onClick={() => onNavigate("jobs")}
+                    className="flex items-start gap-3 p-4 rounded-xl border border-border hover:bg-muted hover:border-primary/30 transition-colors cursor-pointer"
+                  >
+                    <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
+                      <Briefcase size={18} className="text-primary" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="font-semibold text-sm text-foreground truncate">
+                        {job ? job.title : "Cargando..."}
+                      </p>
+                      {job?.companies?.name && (
+                        <p className="text-xs text-muted-foreground mt-0.5">{job.companies.name}</p>
+                      )}
+                      {job?.location && (
+                        <p className="text-xs text-muted-foreground">{job.location} · {job.modality}</p>
+                      )}
+                      <div className="flex flex-wrap gap-1 mt-2">
+                        {m.matching_skills.map((s) => (
+                          <span key={s} className="text-xs bg-primary/10 text-primary px-2 py-0.5 rounded-full font-medium">{s}</span>
+                        ))}
+                      </div>
+                    </div>
+                    <div className="flex flex-col items-end gap-2 shrink-0">
+                      <span className="text-xs font-semibold bg-primary/10 text-primary px-2 py-1 rounded-full whitespace-nowrap">
+                        {m.match_count} match{m.match_count !== 1 ? "es" : ""}
+                      </span>
+                      <ArrowRight size={14} className="text-muted-foreground" />
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -1331,9 +1506,16 @@ function JobsPage({ user }: { user: UserSession }) {
   const [skillInput, setSkillInput] = useState("");
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState("");
+  const [profile, setProfile] = useState<FullProfile | null>(null);
+  const [expandedAppId, setExpandedAppId] = useState<string | null>(null);
+  const [appHistories, setAppHistories] = useState<Record<string, AppHistoryEntry[]>>({});
 
   const isCandidate = user.roles.includes("candidato");
   const isPoster = user.roles.includes("poster");
+
+  useEffect(() => {
+    if (isCandidate) fetch(`${API_URL}/profile/${user.user_id}`).then((r) => r.ok ? r.json() : null).then((d) => d && setProfile(d));
+  }, [user.user_id]);
 
   const loadJobs = async () => {
     const res = await fetch(`${API_URL}/jobs`);
@@ -1361,6 +1543,18 @@ function JobsPage({ user }: { user: UserSession }) {
   const loadApplicants = async (job_id: string) => {
     const res = await fetch(`${API_URL}/jobs/${job_id}/applications`);
     if (res.ok) setPostedApplicants(await res.json());
+  };
+
+  const toggleAppHistory = async (app_id: string) => {
+    if (expandedAppId === app_id) { setExpandedAppId(null); return; }
+    setExpandedAppId(app_id);
+    if (!appHistories[app_id]) {
+      const res = await fetch(`${API_URL}/jobs/applications/${app_id}/history`);
+      if (res.ok) {
+        const data = await res.json();
+        setAppHistories((prev) => ({ ...prev, [app_id]: data }));
+      }
+    }
   };
 
   useEffect(() => {
@@ -1440,6 +1634,16 @@ function JobsPage({ user }: { user: UserSession }) {
     });
     setPostedSelected(null);
     setPostedApplicants([]);
+    await loadPostedJobs();
+    await loadJobs();
+  };
+
+  const toggleJobActive = async (job: Job) => {
+    await fetch(`${API_URL}/jobs/${job.job_id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ user_id: user.user_id, is_active: !job.is_active }),
+    });
     await loadPostedJobs();
     await loadJobs();
   };
@@ -1544,16 +1748,31 @@ function JobsPage({ user }: { user: UserSession }) {
                     </div>
                   </div>
                   {selected.description && <p className="text-sm text-foreground leading-relaxed mb-4">{selected.description}</p>}
-                  {selected.job_skill?.length > 0 && (
-                    <>
-                      <p className="text-sm font-semibold text-foreground mb-2">Habilidades requeridas</p>
-                      <div className="flex flex-wrap gap-2 mb-5">
-                        {selected.job_skill.map(({ skills: s }) => (
-                          <span key={s.skill_id} className="text-xs px-3 py-1.5 rounded-xl font-medium bg-primary/10 text-primary">{s.name}</span>
-                        ))}
-                      </div>
-                    </>
-                  )}
+                  {selected.job_skill?.length > 0 && (() => {
+                    const userSkillNames = new Set((profile?.skills ?? []).map((s) => s.skills.name.toLowerCase()));
+                    const required = selected.job_skill.map(({ skills: s }) => s);
+                    const matched = required.filter((s) => userSkillNames.has(s.name.toLowerCase()));
+                    const pct = Math.round((matched.length / required.length) * 100);
+                    return (
+                      <>
+                        <div className="flex items-center justify-between mb-2">
+                          <p className="text-sm font-semibold text-foreground">Habilidades requeridas</p>
+                          {isCandidate && (
+                            <span className={`text-xs font-semibold px-2.5 py-1 rounded-full ${pct >= 70 ? "bg-green-100 text-green-700" : pct >= 40 ? "bg-yellow-100 text-yellow-700" : "bg-red-100 text-red-700"}`}>
+                              {pct}% compatible ({matched.length}/{required.length})
+                            </span>
+                          )}
+                        </div>
+                        <div className="flex flex-wrap gap-2 mb-5">
+                          {required.map((s) => (
+                            <span key={s.skill_id} className={`text-xs px-3 py-1.5 rounded-xl font-medium ${userSkillNames.has(s.name.toLowerCase()) ? "bg-green-100 text-green-700" : "bg-primary/10 text-primary"}`}>
+                              {s.name}{userSkillNames.has(s.name.toLowerCase()) ? " ✓" : ""}
+                            </span>
+                          ))}
+                        </div>
+                      </>
+                    );
+                  })()}
                   {isCandidate && (
                     <button onClick={handleApply} disabled={appliedIds.has(selected.job_id) || applying} className={`w-full py-3.5 rounded-xl font-semibold text-sm transition-all ${appliedIds.has(selected.job_id) ? "bg-green-100 text-green-700 cursor-default" : "bg-primary text-primary-foreground hover:opacity-90 disabled:opacity-60"}`}>
                       {appliedIds.has(selected.job_id) ? "✓ Ya te postulaste" : applying ? "Enviando..." : "Postularme ahora"}
@@ -1576,17 +1795,45 @@ function JobsPage({ user }: { user: UserSession }) {
             <div className="p-12 text-center"><Briefcase size={28} className="text-muted-foreground mx-auto mb-2" /><p className="text-sm text-muted-foreground">Aún no te postulaste a ninguna oferta.</p></div>
           ) : (
             <div className="divide-y divide-border">
-              {myApplications.map((app) => (
-                <div key={app.application_id} className="flex items-center gap-4 px-5 py-4">
-                  <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center shrink-0"><Briefcase size={16} className="text-primary" /></div>
-                  <div className="flex-1">
-                    <p className="font-semibold text-sm text-foreground">{app.jobs?.title ?? "Oferta"}</p>
-                    <p className="text-xs text-muted-foreground">{app.jobs?.companies?.name ?? "Empresa no indicada"}</p>
-                    <p className="text-xs text-muted-foreground">{app.updated_at?.slice(0, 10)}</p>
+              {myApplications.map((app) => {
+                const isExpanded = expandedAppId === app.application_id;
+                const history = appHistories[app.application_id] ?? [];
+                return (
+                  <div key={app.application_id}>
+                    <div
+                      className="flex items-center gap-4 px-5 py-4 cursor-pointer hover:bg-muted/40 transition-colors"
+                      onClick={() => toggleAppHistory(app.application_id)}
+                    >
+                      <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center shrink-0"><Briefcase size={16} className="text-primary" /></div>
+                      <div className="flex-1">
+                        <p className="font-semibold text-sm text-foreground">{app.jobs?.title ?? "Oferta"}</p>
+                        <p className="text-xs text-muted-foreground">{app.jobs?.companies?.name ?? "Empresa no indicada"}</p>
+                        <p className="text-xs text-muted-foreground">{app.updated_at?.slice(0, 10)}</p>
+                      </div>
+                      <StatusBadge status={app.status} />
+                      <span className="text-xs text-muted-foreground ml-2">{isExpanded ? "▲" : "▼"}</span>
+                    </div>
+                    {isExpanded && (
+                      <div className="px-5 pb-4 bg-muted/30">
+                        <p className="text-xs font-medium text-muted-foreground mb-3">Historial de estados</p>
+                        {history.length === 0 ? (
+                          <p className="text-xs text-muted-foreground">Sin historial registrado aún.</p>
+                        ) : (
+                          <ol className="relative border-l border-border ml-2 space-y-3">
+                            {history.map((h, i) => (
+                              <li key={i} className="ml-4">
+                                <span className="absolute -left-1.5 mt-1 w-3 h-3 rounded-full bg-primary border-2 border-card" />
+                                <StatusBadge status={h.status} />
+                                <span className="ml-2 text-xs text-muted-foreground">{h.changed_at?.slice(0, 16).replace("T", " ")}</span>
+                              </li>
+                            ))}
+                          </ol>
+                        )}
+                      </div>
+                    )}
                   </div>
-                  <StatusBadge status={app.status} />
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </div>
@@ -1688,12 +1935,22 @@ function JobsPage({ user }: { user: UserSession }) {
                 <div className="space-y-3">
                   {postedJobs.map((job) => (
                     <div key={job.job_id} onClick={() => { setPostedSelected(job); loadApplicants(job.job_id); }} className={`p-4 rounded-xl border cursor-pointer transition-all hover:shadow-sm ${postedSelected?.job_id === job.job_id ? "border-primary bg-primary/5" : "border-border"}`}>
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <p className="font-semibold text-sm text-foreground">{job.title}</p>
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2">
+                            <p className="font-semibold text-sm text-foreground truncate">{job.title}</p>
+                            <span className={`text-xs px-2 py-0.5 rounded-full font-medium shrink-0 ${job.is_active ? "bg-green-100 text-green-700" : "bg-muted text-muted-foreground"}`}>
+                              {job.is_active ? "Activo" : "Inactivo"}
+                            </span>
+                          </div>
                           <p className="text-xs text-muted-foreground mt-0.5">{job.location ?? "Sin ubicación"} · {job.modality} · {job.shift}</p>
                         </div>
-                        <button onClick={(e) => { e.stopPropagation(); deleteJob(job.job_id); }} className="text-muted-foreground hover:text-destructive transition-colors p-1.5"><Trash2 size={14} /></button>
+                        <div className="flex items-center gap-1 shrink-0">
+                          <button onClick={(e) => { e.stopPropagation(); toggleJobActive(job); }} className="text-xs border border-border rounded-lg px-2 py-1 hover:bg-muted transition-colors text-muted-foreground">
+                            {job.is_active ? "Desactivar" : "Activar"}
+                          </button>
+                          <button onClick={(e) => { e.stopPropagation(); deleteJob(job.job_id); }} className="text-muted-foreground hover:text-destructive transition-colors p-1.5"><Trash2 size={14} /></button>
+                        </div>
                       </div>
                     </div>
                   ))}
@@ -2168,7 +2425,7 @@ export default function App() {
   const pageComponents: Record<string, JSX.Element> = {
     feed: <FeedPage user={currentUser} />,
     profile: <ProfilePage user={currentUser} onUserUpdate={setCurrentUser} />,
-    network: <NetworkPage />,
+    network: <NetworkPage user={currentUser} onNavigate={setPage} />,
     jobs: <JobsPage user={currentUser!} />,
     groups: <GroupsPage user={currentUser} />,
     messages: <MessagesPage />,

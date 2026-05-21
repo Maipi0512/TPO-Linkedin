@@ -9,6 +9,7 @@ from datetime import datetime, timedelta, timezone
 
 from flask import Blueprint, request, jsonify
 from db import supabase, supabase_admin
+from routes.connections import create_user_node
 
 auth_bp = Blueprint("auth", __name__, url_prefix="/auth")
 
@@ -184,6 +185,9 @@ def register():
                 "slogan": company_slogan,
             }).execute()
 
+    # Crear nodo Neo4j para este usuario (falla silenciosamente si Neo4j no está configurado)
+    create_user_node(user_id, name, surname or "", None)
+
     actual_roles = get_user_roles(user_id)
     resp = build_user_response(
         {"user_id": user_id, "email": email, "name": name, "surname": surname,
@@ -216,6 +220,28 @@ def delete_account(user_id):
 
     supabase_admin.table("users").delete().eq("user_id", user_id).execute()
     return jsonify({"message": "Cuenta eliminada correctamente."}), 200
+
+
+@auth_bp.route("/add-role", methods=["POST"])
+def add_role():
+    data = request.get_json() or {}
+    user_id = data.get("user_id", "").strip()
+    new_role = data.get("role", "").strip()
+    if new_role not in ("candidato", "poster"):
+        return jsonify({"error": "Rol inválido. Debe ser 'candidato' o 'poster'."}), 400
+
+    role_res = supabase_admin.table("roles").select("role_id").eq("name", new_role).limit(1).execute()
+    if not role_res.data:
+        return jsonify({"error": "Rol no encontrado."}), 404
+    role_id = role_res.data[0]["role_id"]
+
+    existing = supabase_admin.table("user_roles").select("role_id").eq("user_id", user_id).eq("role_id", role_id).limit(1).execute()
+    if existing.data:
+        return jsonify({"error": "Ya tenés ese rol asignado."}), 409
+
+    supabase_admin.table("user_roles").insert({"user_id": user_id, "role_id": role_id}).execute()
+    roles = get_user_roles(user_id)
+    return jsonify({"roles": roles}), 200
 
 
 @auth_bp.route("/forgot-password", methods=["POST"])
