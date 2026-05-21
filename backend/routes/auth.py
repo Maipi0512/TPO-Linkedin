@@ -123,6 +123,8 @@ def register():
     email = (data.get("email") or "").strip().lower()
     password = data.get("password") or ""
     role = data.get("role") or "candidato"
+    if role not in ("candidato", "poster"):
+        return jsonify({"error": "Rol inválido. Debe ser 'candidato' o 'poster'."}), 400
 
     if not name or not email or not password:
         return jsonify({"error": "Nombre, email y contraseña son requeridos."}), 400
@@ -147,11 +149,10 @@ def register():
     if not insert_result.data:
         return jsonify({"error": "Error al crear la cuenta."}), 500
 
-    company_name = (data.get("company_name") or "").strip() or None
+    company_name   = (data.get("company_name") or "").strip() or None
+    company_slogan = (data.get("company_slogan") or "").strip() or None
 
-    roles_to_assign = {"candidato"}
-    if role == "poster":
-        roles_to_assign.add("poster")
+    roles_to_assign = {role}  # solo el rol seleccionado, no ambos
 
     # Auto-seed roles catalog si no existen todavía
     for role_name in roles_to_assign:
@@ -177,7 +178,11 @@ def register():
             company_id = existing.data[0]["company_id"]
         else:
             company_id = str(uuid.uuid4())
-            supabase_admin.table("companies").insert({"company_id": company_id, "name": company_name}).execute()
+            supabase_admin.table("companies").insert({
+                "company_id": company_id,
+                "name": company_name,
+                "slogan": company_slogan,
+            }).execute()
 
     actual_roles = get_user_roles(user_id)
     resp = build_user_response(
@@ -188,6 +193,29 @@ def register():
     if company_id:
         resp["company_id"] = company_id
     return jsonify(resp), 201
+
+
+@auth_bp.route("/delete-account/<user_id>", methods=["DELETE"])
+def delete_account(user_id):
+    """Elimina la cuenta y todos sus datos en cascada (ON DELETE CASCADE en SQL)."""
+    data = request.get_json() or {}
+    password = data.get("password", "")
+
+    user_res = (
+        supabase_admin.table("users")
+        .select("password_hash")
+        .eq("user_id", user_id)
+        .limit(1)
+        .execute()
+    )
+    if not user_res.data:
+        return jsonify({"error": "Usuario no encontrado."}), 404
+
+    if not bcrypt.checkpw(password.encode("utf-8"), user_res.data[0]["password_hash"].encode("utf-8")):
+        return jsonify({"error": "Contraseña incorrecta."}), 401
+
+    supabase_admin.table("users").delete().eq("user_id", user_id).execute()
+    return jsonify({"message": "Cuenta eliminada correctamente."}), 200
 
 
 @auth_bp.route("/forgot-password", methods=["POST"])

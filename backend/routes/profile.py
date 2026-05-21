@@ -1,11 +1,16 @@
 import uuid
-import os
 from datetime import datetime, timezone
 from flask import Blueprint, request, jsonify
 from db import supabase_admin
 
-PHOTOS_DIR = os.path.join(os.path.dirname(__file__), "..", "static", "photos")
-os.makedirs(PHOTOS_DIR, exist_ok=True)
+AVATAR_BUCKET = "avatars"
+
+
+def _ensure_avatar_bucket():
+    try:
+        supabase_admin.storage.create_bucket(AVATAR_BUCKET, options={"public": True})
+    except Exception:
+        pass  # ya existe
 
 profile_bp = Blueprint("profile", __name__, url_prefix="/profile")
 
@@ -93,11 +98,27 @@ def upload_photo(user_id):
     if len(content) > 5 * 1024 * 1024:
         return jsonify({"error": "La imagen no puede superar 5 MB."}), 400
 
-    filename = f"{user_id}.{ext}"
-    with open(os.path.join(PHOTOS_DIR, filename), "wb") as f:
-        f.write(content)
+    _ensure_avatar_bucket()
 
-    url = f"http://localhost:5000/static/photos/{filename}"
+    content_type = "image/jpeg" if ext == "jpg" else f"image/{ext}"
+    path = f"{user_id}.{ext}"
+
+    # Borrar foto anterior si existe, luego subir la nueva
+    try:
+        supabase_admin.storage.from_(AVATAR_BUCKET).remove([path])
+    except Exception:
+        pass
+
+    try:
+        supabase_admin.storage.from_(AVATAR_BUCKET).upload(
+            path=path,
+            file=content,
+            file_options={"content-type": content_type},
+        )
+    except Exception as e:
+        return jsonify({"error": f"Error al subir la imagen: {e}"}), 500
+
+    url = supabase_admin.storage.from_(AVATAR_BUCKET).get_public_url(path)
     supabase_admin.table("users").update({"profile_photo_url": url}).eq("user_id", user_id).execute()
 
     return jsonify({"url": url}), 200

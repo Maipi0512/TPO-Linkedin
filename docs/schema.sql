@@ -1,5 +1,6 @@
 -- =============================================================
 --  LinkPro - Esquema SQL (PostgreSQL / Supabase)
+--  Sincronizado con el estado real de la nube (Mayo 2026)
 --  Ejecutar en el SQL Editor de Supabase o via init_db.py
 -- =============================================================
 --
@@ -25,86 +26,43 @@
 
 
 -- ── Extensiones ───────────────────────────────────────────────
-CREATE EXTENSION IF NOT EXISTS "pgcrypto";   -- habilita gen_random_uuid()
-
-
--- ── Enum: estados de postulación ──────────────────────────────
--- Usado en la tabla applications.
--- Queries que lo usan:
---   INSERT INTO applications (status) VALUES ('submitted')
---   UPDATE applications SET status = 'in_review' WHERE application_id = $1
-DO $$ BEGIN
-    CREATE TYPE app_status AS ENUM (
-        'submitted',    -- recién enviada
-        'in_review',    -- el poster la está revisando
-        'in_process',   -- en proceso de selección
-        'successful',   -- aceptada
-        'rejected'      -- rechazada
-    );
-EXCEPTION WHEN duplicate_object THEN NULL;
-END $$;
+CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 
 
 -- =============================================================
---  TABLA: users
---  Almacena los datos de cada usuario registrado.
---
---  QUERIES que se ejecutan desde el backend:
---
---  REGISTRO (auth.py):
---    INSERT INTO users (user_id, email, password_hash, name, surname, dni)
---    VALUES ($1, $2, $3, $4, $5, $6)
---
---  LOGIN (auth.py):
---    SELECT user_id, email, name, surname, dni, profile_photo_url, password_hash
---    FROM users WHERE email = $1 LIMIT 1
---
---  ACTUALIZAR PERFIL (profile.py):
---    UPDATE users SET name=$1, surname=$2, dni=$3, updated_at=now()
---    WHERE user_id = $4
---
---  ACTUALIZAR FOTO (profile.py):
---    UPDATE users SET profile_photo_url=$1 WHERE user_id = $2
---
---  CAMBIAR CONTRASEÑA (auth.py - reset):
---    UPDATE users SET password_hash=$1 WHERE user_id = $2
+--  1. IDENTIDAD Y AUTENTICACIÓN
 -- =============================================================
+
+-- QUERIES (auth.py):
+--   INSERT INTO users (user_id, email, password_hash, name, surname, dni) VALUES (...)
+--   SELECT user_id, email, name, surname, dni, profile_photo_url, password_hash FROM users WHERE email=$1
+--   UPDATE users SET name=$1, surname=$2, dni=$3, updated_at=now() WHERE user_id=$4
+--   UPDATE users SET profile_photo_url=$1 WHERE user_id=$2
+--   UPDATE users SET password_hash=$1 WHERE user_id=$2
+--   DELETE FROM users WHERE user_id=$1  (cascada automática a todas las tablas hijas)
 CREATE TABLE IF NOT EXISTS users (
-    user_id           UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
-    email             TEXT        NOT NULL UNIQUE,
-    password_hash     TEXT        NOT NULL,
-    name              TEXT        NOT NULL,
-    surname           TEXT,
-    dni               TEXT        UNIQUE,
-    profile_photo_url TEXT,
-    created_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
-    updated_at        TIMESTAMPTZ NOT NULL DEFAULT now()
+    user_id           VARCHAR(36)  PRIMARY KEY,
+    email             VARCHAR(255) NOT NULL UNIQUE,
+    password_hash     VARCHAR(255) NOT NULL,
+    name              VARCHAR(100) NOT NULL,
+    surname           VARCHAR(100),
+    dni               VARCHAR(20)  UNIQUE,
+    profile_photo_url VARCHAR(512),
+    created_at        TIMESTAMP    DEFAULT CURRENT_TIMESTAMP,
+    updated_at        TIMESTAMP    DEFAULT CURRENT_TIMESTAMP
 );
 
-
--- =============================================================
---  TABLAS: roles y user_roles
---  Catálogo de roles ('candidato', 'poster') y su asignación
---  a usuarios. Un usuario puede tener uno o ambos roles.
---
---  QUERIES:
---
---  OBTENER ROLES DE UN USUARIO (auth.py):
---    SELECT roles.name FROM user_roles
---    JOIN roles ON user_roles.role_id = roles.role_id
---    WHERE user_roles.user_id = $1
---
---  ASIGNAR ROL AL REGISTRAR (auth.py):
---    INSERT INTO user_roles (user_id, role_id) VALUES ($1, $2)
--- =============================================================
+-- QUERIES (auth.py):
+--   SELECT roles.name FROM user_roles JOIN roles ON user_roles.role_id=roles.role_id WHERE user_id=$1
+--   INSERT INTO user_roles (user_id, role_id) VALUES ($1, $2)
 CREATE TABLE IF NOT EXISTS roles (
-    role_id  SERIAL PRIMARY KEY,
-    name     TEXT   NOT NULL UNIQUE   -- 'candidato' | 'poster'
+    role_id SERIAL       PRIMARY KEY,
+    name    VARCHAR(50)  NOT NULL UNIQUE   -- 'candidato' | 'poster'
 );
 
 CREATE TABLE IF NOT EXISTS user_roles (
-    user_id UUID    NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
-    role_id INTEGER NOT NULL REFERENCES roles(role_id) ON DELETE CASCADE,
+    user_id VARCHAR(36) NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+    role_id INTEGER     NOT NULL REFERENCES roles(role_id) ON DELETE CASCADE,
     PRIMARY KEY (user_id, role_id)
 );
 
@@ -113,249 +71,182 @@ ON CONFLICT (name) DO NOTHING;
 
 
 -- =============================================================
---  TABLA: companies
---  Empresas que pueden estar asociadas a ofertas de empleo
---  y a la experiencia laboral del perfil.
---
---  QUERIES:
---
---  BUSCAR O CREAR EMPRESA AL REGISTRAR POSTER (auth.py):
---    SELECT company_id FROM companies WHERE name ILIKE $1 LIMIT 1
---    INSERT INTO companies (company_id, name) VALUES ($1, $2)
---
---  OBTENER NOMBRE AL LISTAR EMPLEOS (jobs.py):
---    SELECT jobs.*, companies.name FROM jobs
---    LEFT JOIN companies ON jobs.company_id = companies.company_id
+--  2. PERFIL PROFESIONAL
 -- =============================================================
+
+-- QUERIES (auth.py / profile.py):
+--   SELECT company_id FROM companies WHERE name ILIKE $1 LIMIT 1
+--   INSERT INTO companies (company_id, name, slogan, num_employees, location) VALUES (...)
+--   SELECT jobs.*, companies.name FROM jobs LEFT JOIN companies ON jobs.company_id=companies.company_id
 CREATE TABLE IF NOT EXISTS companies (
-    company_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    name       TEXT NOT NULL
+    company_id    VARCHAR(36)  PRIMARY KEY,
+    name          VARCHAR(150) NOT NULL,
+    slogan        VARCHAR(255),
+    num_employees INTEGER,
+    location      VARCHAR(150)
 );
 
-
--- =============================================================
---  TABLA: "work experience"
---  Experiencia laboral del perfil de cada usuario.
---  Nombre con espacio requerido por el backend.
---
---  QUERIES:
---
---  OBTENER EXPERIENCIA DEL PERFIL (profile.py):
---    SELECT "work experience".*, companies.name
---    FROM "work experience"
---    LEFT JOIN companies ON "work experience".company_id = companies.company_id
---    WHERE user_id = $1
---    ORDER BY from_date DESC
---
---  AGREGAR EXPERIENCIA (profile.py):
---    INSERT INTO "work experience"
---      (user_id, company_id, title, description, from_date, end_date, is_current)
---    VALUES ($1, $2, $3, $4, $5, $6, $7)
---
---  ELIMINAR EXPERIENCIA (profile.py):
---    DELETE FROM "work experience" WHERE we_id=$1 AND user_id=$2
--- =============================================================
+-- QUERIES (profile.py):
+--   SELECT we.*, companies.name FROM "work experience" we
+--     LEFT JOIN companies ON we.company_id=companies.company_id WHERE we.user_id=$1 ORDER BY from_date DESC
+--   INSERT INTO "work experience" (user_id, company_id, title, description, from_date, end_date, is_current) VALUES (...)
+--   DELETE FROM "work experience" WHERE we_id=$1 AND user_id=$2
 CREATE TABLE IF NOT EXISTS "work experience" (
-    we_id       SERIAL  PRIMARY KEY,
-    user_id     UUID    NOT NULL REFERENCES users(user_id)  ON DELETE CASCADE,
-    company_id  UUID    REFERENCES companies(company_id)    ON DELETE SET NULL,
-    title       TEXT    NOT NULL,
+    we_id       SERIAL      PRIMARY KEY,
+    user_id     VARCHAR(36) NOT NULL REFERENCES users(user_id)      ON DELETE CASCADE,
+    company_id  VARCHAR(36)          REFERENCES companies(company_id) ON DELETE SET NULL,
+    title       VARCHAR(100) NOT NULL,
     description TEXT,
-    from_date   DATE    NOT NULL,
+    from_date   DATE         NOT NULL,
     end_date    DATE,
-    is_current  BOOLEAN NOT NULL DEFAULT FALSE
+    is_current  BOOLEAN      DEFAULT FALSE
 );
 
-
--- =============================================================
---  TABLA: education
---  Educación formal del perfil de cada usuario.
---
---  QUERIES:
---
---  OBTENER EDUCACIÓN (profile.py):
---    SELECT * FROM education WHERE user_id=$1 ORDER BY from_date DESC
---
---  AGREGAR EDUCACIÓN (profile.py):
---    INSERT INTO education
---      (user_id, title, field, institution, from_date, end_date, is_actual)
---    VALUES ($1, $2, $3, $4, $5, $6, $7)
---
---  ELIMINAR EDUCACIÓN (profile.py):
---    DELETE FROM education WHERE edu_id=$1 AND user_id=$2
--- =============================================================
+-- QUERIES (profile.py):
+--   SELECT * FROM education WHERE user_id=$1 ORDER BY from_date DESC
+--   INSERT INTO education (user_id, title, field, institution, from_date, end_date, is_actual) VALUES (...)
+--   DELETE FROM education WHERE edu_id=$1 AND user_id=$2
 CREATE TABLE IF NOT EXISTS education (
-    edu_id      SERIAL  PRIMARY KEY,
-    user_id     UUID    NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
-    title       TEXT    NOT NULL,
-    field       TEXT,
-    institution TEXT    NOT NULL,
+    edu_id      SERIAL      PRIMARY KEY,
+    user_id     VARCHAR(36) NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+    title       VARCHAR(100) NOT NULL,
+    field       VARCHAR(100),
+    institution VARCHAR(150) NOT NULL,
     from_date   DATE,
     end_date    DATE,
-    is_actual   BOOLEAN NOT NULL DEFAULT FALSE
+    is_actual   BOOLEAN DEFAULT FALSE
 );
 
-
--- =============================================================
---  TABLAS: skills y user_skill
---  Catálogo de habilidades compartido entre perfiles y ofertas.
---  user_skill vincula al usuario con sus habilidades y nivel.
---
---  QUERIES:
---
---  BUSCAR O CREAR SKILL (profile.py):
---    SELECT skill_id FROM skills WHERE name ILIKE $1 LIMIT 1
---    INSERT INTO skills (name, type) VALUES ($1, $2)
---
---  AGREGAR HABILIDAD AL PERFIL (profile.py):
---    INSERT INTO user_skill (user_id, skill_id, level) VALUES ($1, $2, $3)
---    ON CONFLICT (user_id, skill_id) DO UPDATE SET level=$3
---
---  OBTENER HABILIDADES DEL PERFIL (profile.py):
---    SELECT user_skill.level, skills.skill_id, skills.name, skills.type
---    FROM user_skill JOIN skills ON user_skill.skill_id = skills.skill_id
---    WHERE user_skill.user_id = $1
---
---  ELIMINAR HABILIDAD (profile.py):
---    DELETE FROM user_skill WHERE user_id=$1 AND skill_id=$2
--- =============================================================
+-- QUERIES (profile.py):
+--   SELECT skill_id FROM skills WHERE name ILIKE $1 LIMIT 1
+--   INSERT INTO skills (name, type) VALUES ($1, $2)
+--   INSERT INTO user_skill (user_id, skill_id, level) VALUES (...) ON CONFLICT DO UPDATE SET level=$3
+--   SELECT us.level, s.skill_id, s.name, s.type FROM user_skill us JOIN skills s ON us.skill_id=s.skill_id WHERE us.user_id=$1
+--   DELETE FROM user_skill WHERE user_id=$1 AND skill_id=$2
 CREATE TABLE IF NOT EXISTS skills (
-    skill_id SERIAL PRIMARY KEY,
-    name     TEXT   NOT NULL,
-    type     TEXT   NOT NULL DEFAULT 'técnica'  -- 'técnica' | 'blanda'
+    skill_id SERIAL      PRIMARY KEY,
+    name     VARCHAR(100) NOT NULL UNIQUE,
+    type     VARCHAR(50)            -- 'técnica' | 'blanda'
 );
 
 CREATE TABLE IF NOT EXISTS user_skill (
-    user_id  UUID    NOT NULL REFERENCES users(user_id)   ON DELETE CASCADE,
-    skill_id INTEGER NOT NULL REFERENCES skills(skill_id) ON DELETE CASCADE,
-    level    TEXT    NOT NULL DEFAULT 'Principiante',      -- 'Principiante' | 'Intermedio' | 'Avanzado'
+    user_id  VARCHAR(36) NOT NULL REFERENCES users(user_id)   ON DELETE CASCADE,
+    skill_id INTEGER     NOT NULL REFERENCES skills(skill_id) ON DELETE CASCADE,
+    level    VARCHAR(50),           -- 'Principiante' | 'Intermedio' | 'Avanzado'
     PRIMARY KEY (user_id, skill_id)
 );
 
 
 -- =============================================================
---  TABLAS: jobs y job_skill
---  Ofertas de empleo publicadas por usuarios con rol poster.
---  job_skill relaciona cada oferta con sus habilidades requeridas.
---
---  QUERIES:
---
---  LISTAR OFERTAS ACTIVAS (jobs.py):
---    SELECT jobs.*, companies.name,
---           job_skill.skill_id, skills.name, skills.type
---    FROM jobs
---    LEFT JOIN companies ON jobs.company_id = companies.company_id
---    LEFT JOIN job_skill  ON job_skill.job_id = jobs.job_id
---    LEFT JOIN skills     ON skills.skill_id  = job_skill.skill_id
---    WHERE jobs.is_active = TRUE
---    ORDER BY jobs.created_at DESC
---
---  CREAR OFERTA (jobs.py):
---    INSERT INTO jobs
---      (job_id, poster_user_id, company_id, title, description,
---       location, shift, modality, is_active)
---    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,TRUE)
---
---  AGREGAR SKILL A OFERTA (jobs.py):
---    INSERT INTO job_skill (job_id, skill_id) VALUES ($1, $2)
---
---  ELIMINAR OFERTA (jobs.py):
---    DELETE FROM jobs WHERE job_id=$1
---    -- ON DELETE CASCADE elimina automáticamente job_skill y applications
---
---  LISTAR OFERTAS DE UN POSTER (jobs.py):
---    SELECT jobs.*, companies.name FROM jobs
---    LEFT JOIN companies ON jobs.company_id = companies.company_id
---    WHERE jobs.poster_user_id = $1
---    ORDER BY jobs.created_at DESC
+--  3. EMPRESAS Y EMPLEOS
 -- =============================================================
+
+-- QUERIES (jobs.py):
+--   INSERT INTO jobs (job_id, poster_user_id, company_id, title, description,
+--     location, working_hours, shift, modality, employment_type, is_active) VALUES (...)
+--   SELECT jobs.*, companies.name, job_skill.skill_id, skills.name, skills.type FROM jobs
+--     LEFT JOIN companies ON jobs.company_id=companies.company_id
+--     LEFT JOIN job_skill ON job_skill.job_id=jobs.job_id
+--     LEFT JOIN skills    ON skills.skill_id=job_skill.skill_id
+--     WHERE jobs.is_active=TRUE ORDER BY jobs.created_at DESC
+--   DELETE FROM jobs WHERE job_id=$1  (cascada automática a job_skill y applications)
 CREATE TABLE IF NOT EXISTS jobs (
-    job_id         UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
-    poster_user_id UUID        NOT NULL REFERENCES users(user_id)  ON DELETE CASCADE,
-    company_id     UUID        REFERENCES companies(company_id)     ON DELETE SET NULL,
-    title          TEXT        NOT NULL,
-    description    TEXT,
-    location       TEXT,
-    shift          TEXT        NOT NULL DEFAULT 'full-time',    -- 'full-time' | 'part-time' | 'freelance'
-    modality       TEXT        NOT NULL DEFAULT 'presencial',   -- 'presencial' | 'hibrido' | 'remoto'
-    is_active      BOOLEAN     NOT NULL DEFAULT TRUE,
-    created_at     TIMESTAMPTZ NOT NULL DEFAULT now()
+    job_id          VARCHAR(36)  PRIMARY KEY,
+    poster_user_id  VARCHAR(36)  NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+    company_id      VARCHAR(36)           REFERENCES companies(company_id),
+    title           VARCHAR(150) NOT NULL,
+    description     TEXT,
+    location        VARCHAR(150),
+    working_hours   INTEGER,               -- horas semanales
+    shift           VARCHAR(50),           -- 'full-time' | 'part-time' | 'freelance'
+    modality        VARCHAR(50)  DEFAULT 'presencial',  -- 'presencial' | 'hibrido' | 'remoto'
+    employment_type VARCHAR(50)  DEFAULT 'full-time',
+    is_active       BOOLEAN      DEFAULT TRUE,
+    created_at      TIMESTAMP    DEFAULT CURRENT_TIMESTAMP,
+    updated_at      TIMESTAMP    DEFAULT CURRENT_TIMESTAMP
 );
 
+-- QUERIES (jobs.py):
+--   INSERT INTO job_skill (job_id, skill_id) VALUES ($1, $2)
 CREATE TABLE IF NOT EXISTS job_skill (
-    job_id   UUID    NOT NULL REFERENCES jobs(job_id)      ON DELETE CASCADE,
-    skill_id INTEGER NOT NULL REFERENCES skills(skill_id)  ON DELETE CASCADE,
+    job_id   VARCHAR(36) NOT NULL REFERENCES jobs(job_id)      ON DELETE CASCADE,
+    skill_id INTEGER     NOT NULL REFERENCES skills(skill_id)  ON DELETE CASCADE,
     PRIMARY KEY (job_id, skill_id)
 );
 
 
 -- =============================================================
---  TABLA: applications
---  Postulaciones de candidatos a ofertas de empleo.
---  UNIQUE (job_id, user_id) impide postulaciones duplicadas.
---
---  QUERIES:
---
---  POSTULARSE A UNA OFERTA (jobs.py):
---    INSERT INTO applications (application_id, job_id, user_id, status)
---    VALUES ($1, $2, $3, 'submitted')
---
---  VER MIS POSTULACIONES (jobs.py - candidato):
---    SELECT applications.*, jobs.job_id, jobs.title, companies.name,
---           users.user_id, users.name, users.surname, users.email
---    FROM applications
---    LEFT JOIN jobs      ON applications.job_id  = jobs.job_id
---    LEFT JOIN companies ON jobs.company_id       = companies.company_id
---    LEFT JOIN users     ON applications.user_id  = users.user_id
---    WHERE applications.user_id = $1
---    ORDER BY applications.applied_at DESC
---
---  VER POSTULANTES DE UNA OFERTA (jobs.py - poster):
---    SELECT applications.*, users.name, users.surname, users.email,
---           users.profile_photo_url
---    FROM applications
---    JOIN users ON applications.user_id = users.user_id
---    WHERE applications.job_id = $1
---
---  CAMBIAR ESTADO (jobs.py - poster):
---    UPDATE applications SET status=$1, updated_at=now()
---    WHERE application_id=$2
+--  4. POSTULACIONES
 -- =============================================================
+
+-- QUERIES (jobs.py):
+--   INSERT INTO applications (application_id, job_id, user_id, status) VALUES (...)
+--   SELECT applications.*, jobs.title, companies.name, users.name, users.surname, users.email
+--     FROM applications LEFT JOIN jobs ... LEFT JOIN companies ... LEFT JOIN users ...
+--     WHERE applications.user_id=$1 ORDER BY applied_at DESC
+--   UPDATE applications SET status=$1, updated_at=now() WHERE application_id=$2
 CREATE TABLE IF NOT EXISTS applications (
-    application_id UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
-    job_id         UUID        NOT NULL REFERENCES jobs(job_id)   ON DELETE CASCADE,
-    user_id        UUID        NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
-    status         app_status  NOT NULL DEFAULT 'submitted',
-    applied_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
-    updated_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
-    UNIQUE (job_id, user_id)
+    application_id VARCHAR(36) PRIMARY KEY,
+    user_id        VARCHAR(36) NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+    job_id         VARCHAR(36) NOT NULL REFERENCES jobs(job_id)   ON DELETE CASCADE,
+    applied_at     TIMESTAMP   DEFAULT CURRENT_TIMESTAMP,
+    status         VARCHAR(50) DEFAULT 'submitted',  -- submitted | in_review | in_process | successful | rejected
+    updated_at     TIMESTAMP   DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT unq_user_job UNIQUE (user_id, job_id)
+);
+
+
+-- =============================================================
+--  5. GRUPOS (membresía gestionada en SQL)
+--     Los mensajes de grupo van a Cassandra (futura implementación)
+-- =============================================================
+
+-- QUERIES (futura implementación groups.py):
+--   INSERT INTO groups (group_id, name, admin_id) VALUES (...)
+--   INSERT INTO group_members (group_id, user_id, role) VALUES (...)
+--   SELECT gm.*, users.name, users.surname FROM group_members gm JOIN users ON gm.user_id=users.user_id WHERE gm.group_id=$1
+--   DELETE FROM group_members WHERE group_id=$1 AND user_id=$2
+CREATE TABLE IF NOT EXISTS groups (
+    group_id    VARCHAR(36)  PRIMARY KEY,
+    name        VARCHAR(150) NOT NULL,
+    description VARCHAR(300),
+    admin_id    VARCHAR(36)  NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+    created_at  TIMESTAMP    DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS group_members (
+    group_id  VARCHAR(36) NOT NULL REFERENCES groups(group_id) ON DELETE CASCADE,
+    user_id   VARCHAR(36) NOT NULL REFERENCES users(user_id)   ON DELETE CASCADE,
+    role      VARCHAR(20) DEFAULT 'member',   -- 'admin' | 'member'
+    joined_at TIMESTAMP   DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (group_id, user_id)
 );
 
 
 -- =============================================================
 --  ÍNDICES
---  Aceleran las consultas más frecuentes del sistema.
 -- =============================================================
-CREATE INDEX IF NOT EXISTS idx_user_roles_user  ON user_roles (user_id);
-CREATE INDEX IF NOT EXISTS idx_work_exp_user     ON "work experience" (user_id);
-CREATE INDEX IF NOT EXISTS idx_education_user    ON education (user_id);
-CREATE INDEX IF NOT EXISTS idx_user_skill_user   ON user_skill (user_id);
-CREATE INDEX IF NOT EXISTS idx_jobs_poster       ON jobs (poster_user_id);
-CREATE INDEX IF NOT EXISTS idx_jobs_company      ON jobs (company_id);
-CREATE INDEX IF NOT EXISTS idx_job_skill_job     ON job_skill (job_id);
-CREATE INDEX IF NOT EXISTS idx_applications_job  ON applications (job_id);
-CREATE INDEX IF NOT EXISTS idx_applications_user ON applications (user_id);
+CREATE INDEX IF NOT EXISTS idx_user_roles_user     ON user_roles (user_id);
+CREATE INDEX IF NOT EXISTS idx_work_exp_user        ON "work experience" (user_id);
+CREATE INDEX IF NOT EXISTS idx_education_user       ON education (user_id);
+CREATE INDEX IF NOT EXISTS idx_user_skill_user      ON user_skill (user_id);
+CREATE INDEX IF NOT EXISTS idx_jobs_poster          ON jobs (poster_user_id);
+CREATE INDEX IF NOT EXISTS idx_jobs_company         ON jobs (company_id);
+CREATE INDEX IF NOT EXISTS idx_job_skill_job        ON job_skill (job_id);
+CREATE INDEX IF NOT EXISTS idx_applications_job     ON applications (job_id);
+CREATE INDEX IF NOT EXISTS idx_applications_user    ON applications (user_id);
+CREATE INDEX IF NOT EXISTS idx_groups_admin         ON groups (admin_id);
+CREATE INDEX IF NOT EXISTS idx_group_members_user   ON group_members (user_id);
+CREATE INDEX IF NOT EXISTS idx_group_members_group  ON group_members (group_id);
 
 
 -- =============================================================
 --  TRIGGER: updated_at automático
---  Se ejecuta automáticamente en cada UPDATE para mantener
---  el campo updated_at sincronizado sin lógica en el backend.
 -- =============================================================
 CREATE OR REPLACE FUNCTION set_updated_at()
 RETURNS TRIGGER AS $$
 BEGIN
-    NEW.updated_at = now();
+    NEW.updated_at = CURRENT_TIMESTAMP;
     RETURN NEW;
 END;
 $$ LANGUAGE plpgsql;
@@ -364,6 +255,28 @@ CREATE OR REPLACE TRIGGER trg_users_updated_at
     BEFORE UPDATE ON users
     FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 
+CREATE OR REPLACE TRIGGER trg_jobs_updated_at
+    BEFORE UPDATE ON jobs
+    FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+
 CREATE OR REPLACE TRIGGER trg_applications_updated_at
     BEFORE UPDATE ON applications
     FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+
+
+-- =============================================================
+--  SEGURIDAD: RLS deshabilitado (acceso vía service key)
+-- =============================================================
+ALTER TABLE users         DISABLE ROW LEVEL SECURITY;
+ALTER TABLE roles         DISABLE ROW LEVEL SECURITY;
+ALTER TABLE user_roles    DISABLE ROW LEVEL SECURITY;
+ALTER TABLE companies     DISABLE ROW LEVEL SECURITY;
+ALTER TABLE "work experience" DISABLE ROW LEVEL SECURITY;
+ALTER TABLE education     DISABLE ROW LEVEL SECURITY;
+ALTER TABLE skills        DISABLE ROW LEVEL SECURITY;
+ALTER TABLE user_skill    DISABLE ROW LEVEL SECURITY;
+ALTER TABLE jobs          DISABLE ROW LEVEL SECURITY;
+ALTER TABLE job_skill     DISABLE ROW LEVEL SECURITY;
+ALTER TABLE applications  DISABLE ROW LEVEL SECURITY;
+ALTER TABLE groups        DISABLE ROW LEVEL SECURITY;
+ALTER TABLE group_members DISABLE ROW LEVEL SECURITY;

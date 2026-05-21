@@ -4,12 +4,12 @@ import {
   Heart, MessageCircle, Share2, ThumbsUp, Send, Plus, ChevronRight,
   CheckCircle, Clock, MapPin, Building2, GraduationCap, Star, X as XIcon,
   MoreHorizontal, Paperclip, Smile, Check, CheckCheck, Edit3, Trash2,
-  UserPlus, UserCheck, Filter, ArrowRight, Shield, Zap, Globe, Lock
+  UserPlus, UserCheck, Filter, ArrowRight, Shield, Zap, Globe, Lock, UsersRound
 } from "lucide-react";
 
 const API_URL = "http://localhost:5000";
 
-type Page = "home" | "auth" | "feed" | "profile" | "network" | "jobs" | "messages" | "notifications";
+type Page = "home" | "auth" | "feed" | "profile" | "network" | "jobs" | "messages" | "notifications" | "groups";
 type AuthMode = "login" | "register" | "forgot" | "reset";
 
 type Experience = { we_id: number; title: string; description: string | null; from_date: string; end_date: string | null; is_current: boolean; companies: { name: string } | null };
@@ -66,6 +66,36 @@ type Post = {
   comments: PostComment[];
   created_at: string;
   updated_at: string;
+};
+
+type Notification = {
+  _id: string;
+  user_id: string;
+  type: string;
+  body: string;
+  ref_id: string | null;
+  is_read: boolean;
+  created_at: string;
+};
+
+type Group = {
+  group_id: string;
+  name: string;
+  description: string | null;
+  admin_id: string;
+  created_at: string;
+};
+
+type GroupMember = {
+  role: string;
+  joined_at: string;
+  users: { user_id: string; name: string; surname: string | null; profile_photo_url: string | null };
+};
+
+type UserGroup = {
+  role: string;
+  joined_at: string;
+  groups: Group;
 };
 
 const ME = {
@@ -168,12 +198,23 @@ const NOTIFICATIONS = [
 
 // ─── Sidebar ────────────────────────────────────────────────────────────────
 function Sidebar({ page, setPage, onLogout, user }: { page: Page; setPage: (p: Page) => void; onLogout: () => void; user: UserSession | null }) {
+  const [unreadNotifs, setUnreadNotifs] = useState(0);
+
+  useEffect(() => {
+    if (!user) return;
+    fetch(`${API_URL}/notifications/${user.user_id}/unread-count`)
+      .then((r) => r.ok ? r.json() : { unread: 0 })
+      .then((data) => setUnreadNotifs(data.unread ?? 0))
+      .catch(() => {});
+  }, [user?.user_id, page]);
+
   const navItems = [
     { id: "feed" as Page, icon: Home, label: "Inicio" },
     { id: "network" as Page, icon: Users, label: "Mi Red" },
     { id: "jobs" as Page, icon: Briefcase, label: "Empleos" },
+    { id: "groups" as Page, icon: UsersRound, label: "Grupos" },
     { id: "messages" as Page, icon: MessageSquare, label: "Mensajes", badge: 7 },
-    { id: "notifications" as Page, icon: Bell, label: "Notificaciones", badge: 3 },
+    { id: "notifications" as Page, icon: Bell, label: "Notificaciones", badge: unreadNotifs > 0 ? unreadNotifs : undefined },
     { id: "profile" as Page, icon: User, label: "Mi Perfil" },
   ];
 
@@ -367,7 +408,7 @@ function LandingPage({ onLogin, onRegister }: { onLogin: () => void; onRegister:
 // ─── Auth Page ───────────────────────────────────────────────────────────────
 function AuthPage({ onLogin, initialMode }: { onLogin: (user: UserSession) => void; initialMode?: AuthMode }) {
   const [mode, setMode] = useState<AuthMode>(initialMode ?? "login");
-  const [form, setForm] = useState({ name: "", surname: "", dni: "", email: "", password: "", role: "candidato", company_name: "" });
+  const [form, setForm] = useState({ name: "", surname: "", dni: "", email: "", password: "", role: "candidato", company_name: "", company_slogan: "" });
   const [resetToken, setResetToken] = useState("");
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
@@ -526,15 +567,21 @@ function AuthPage({ onLogin, initialMode }: { onLogin: (user: UserSession) => vo
                   <label className="text-sm font-medium text-foreground block mb-1.5">Rol</label>
                   <div className="flex gap-3">
                     {["candidato", "poster"].map((r) => (
-                      <button key={r} type="button" onClick={() => setForm({ ...form, role: r, company_name: "" })} className={`flex-1 py-2.5 rounded-xl text-sm font-medium border transition-all capitalize ${form.role === r ? "bg-primary text-primary-foreground border-primary" : "bg-input-background border-border text-muted-foreground hover:border-primary/40"}`}>{r === "candidato" ? "Candidato" : "Empresa / Poster"}</button>
+                      <button key={r} type="button" onClick={() => setForm({ ...form, role: r, company_name: "", company_slogan: "" })} className={`flex-1 py-2.5 rounded-xl text-sm font-medium border transition-all capitalize ${form.role === r ? "bg-primary text-primary-foreground border-primary" : "bg-input-background border-border text-muted-foreground hover:border-primary/40"}`}>{r === "candidato" ? "Candidato" : "Empresa / Poster"}</button>
                     ))}
                   </div>
                 </div>
                 {form.role === "poster" && (
-                  <div>
-                    <label className="text-sm font-medium text-foreground block mb-1.5">Nombre de empresa <span className="text-destructive">*</span></label>
-                    <input type="text" placeholder="Ej: Globant, MercadoLibre..." value={form.company_name} onChange={(e) => setForm({ ...form, company_name: e.target.value })} className="w-full bg-input-background border border-border rounded-xl px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-primary/30 transition" />
-                  </div>
+                  <>
+                    <div>
+                      <label className="text-sm font-medium text-foreground block mb-1.5">Nombre de empresa <span className="text-destructive">*</span></label>
+                      <input type="text" placeholder="Ej: Globant, MercadoLibre..." value={form.company_name} onChange={(e) => setForm({ ...form, company_name: e.target.value })} className="w-full bg-input-background border border-border rounded-xl px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-primary/30 transition" />
+                    </div>
+                    <div>
+                      <label className="text-sm font-medium text-foreground block mb-1.5">Slogan de empresa</label>
+                      <input type="text" placeholder="Ej: Transformamos el comercio" value={form.company_slogan} onChange={(e) => setForm({ ...form, company_slogan: e.target.value })} className="w-full bg-input-background border border-border rounded-xl px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-primary/30 transition" />
+                    </div>
+                  </>
                 )}
               </>
             )}
@@ -593,7 +640,11 @@ function FeedPage({ user }: { user: UserSession }) {
     }
   };
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => {
+    load();
+    const interval = setInterval(load, 15000);
+    return () => clearInterval(interval);
+  }, []);
 
   const handlePost = async () => {
     if (!newPost.trim() || posting) return;
@@ -1276,7 +1327,7 @@ function JobsPage({ user }: { user: UserSession }) {
   const [filter, setFilter] = useState("all");
   const [applying, setApplying] = useState(false);
   const [showCreateForm, setShowCreateForm] = useState(false);
-  const [newJob, setNewJob] = useState({ title: "", description: "", location: "", modality: "hibrido", shift: "full-time", skill_names: [] as string[] });
+  const [newJob, setNewJob] = useState({ title: "", description: "", location: "", modality: "hibrido", shift: "full-time", employment_type: "full-time", working_hours: "", skill_names: [] as string[] });
   const [skillInput, setSkillInput] = useState("");
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState("");
@@ -1316,7 +1367,19 @@ function JobsPage({ user }: { user: UserSession }) {
     loadJobs();
     loadMyApplications();
     if (isPoster) loadPostedJobs();
+    const interval = setInterval(() => {
+      loadJobs();
+      loadMyApplications();
+      if (isPoster) loadPostedJobs();
+    }, 15000);
+    return () => clearInterval(interval);
   }, [user.user_id]);
+
+  useEffect(() => {
+    if (!postedSelected) return;
+    const interval = setInterval(() => loadApplicants(postedSelected.job_id), 15000);
+    return () => clearInterval(interval);
+  }, [postedSelected?.job_id]);
 
   const handleApply = async () => {
     if (!selected || applying) return;
@@ -1342,7 +1405,7 @@ function JobsPage({ user }: { user: UserSession }) {
     setCreating(false);
     setCreateError("");
     setSkillInput("");
-    setNewJob({ title: "", description: "", location: "", modality: "hibrido", shift: "full-time", skill_names: [] });
+    setNewJob({ title: "", description: "", location: "", modality: "hibrido", shift: "full-time", employment_type: "full-time", working_hours: "", skill_names: [] });
   };
 
   const createJob = async () => {
@@ -1370,7 +1433,11 @@ function JobsPage({ user }: { user: UserSession }) {
   };
 
   const deleteJob = async (job_id: string) => {
-    await fetch(`${API_URL}/jobs/${job_id}`, { method: "DELETE" });
+    await fetch(`${API_URL}/jobs/${job_id}`, {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ user_id: user.user_id }),
+    });
     setPostedSelected(null);
     setPostedApplicants([]);
     await loadPostedJobs();
@@ -1549,11 +1616,20 @@ function JobsPage({ user }: { user: UserSession }) {
                     </select>
                   </div>
                   <div>
-                    <label className={labelCls}>Tipo</label>
+                    <label className={labelCls}>Turno</label>
                     <select className={inputCls} value={newJob.shift} onChange={(e) => setNewJob({ ...newJob, shift: e.target.value })}>
                       {["full-time", "part-time", "freelance"].map((t) => <option key={t} value={t}>{t}</option>)}
                     </select>
                   </div>
+                </div>
+                <div className="grid grid-cols-3 gap-2">
+                  <div>
+                    <label className={labelCls}>Tipo de empleo</label>
+                    <select className={inputCls} value={newJob.employment_type} onChange={(e) => setNewJob({ ...newJob, employment_type: e.target.value })}>
+                      {["full-time", "part-time", "freelance"].map((t) => <option key={t} value={t}>{t}</option>)}
+                    </select>
+                  </div>
+                  <div><label className={labelCls}>Horas semanales</label><input className={inputCls} type="number" min={1} max={60} placeholder="40" value={newJob.working_hours} onChange={(e) => setNewJob({ ...newJob, working_hours: e.target.value })} /></div>
                 </div>
                 <div>
                   <label className={labelCls}>Habilidades requeridas</label>
@@ -1769,17 +1845,35 @@ function MessagesPage() {
 }
 
 // ─── Notifications Page ───────────────────────────────────────────────────────
-function NotificationsPage() {
-  const [notifs, setNotifs] = useState(NOTIFICATIONS);
+function NotificationsPage({ user }: { user: UserSession }) {
+  const [notifs, setNotifs] = useState<Notification[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  const markAllRead = () => setNotifs(notifs.map((n) => ({ ...n, read: true })));
-  const markRead = (id: number) => setNotifs(notifs.map((n) => n.id === id ? { ...n, read: true } : n));
-
-  const iconMap: Record<string, typeof Bell> = {
-    connection: UserPlus, like: ThumbsUp, comment: MessageCircle, job: Briefcase, message: MessageSquare,
+  const load = async () => {
+    setLoading(true);
+    try {
+      const res = await fetch(`${API_URL}/notifications/${user.user_id}`);
+      if (res.ok) setNotifs(await res.json());
+    } finally { setLoading(false); }
   };
 
-  const unread = notifs.filter((n) => !n.read).length;
+  useEffect(() => { load(); }, [user.user_id]);
+
+  const markAllRead = async () => {
+    await fetch(`${API_URL}/notifications/${user.user_id}/read-all`, { method: "PUT" });
+    setNotifs((prev) => prev.map((n) => ({ ...n, is_read: true })));
+  };
+
+  const markRead = async (id: string) => {
+    await fetch(`${API_URL}/notifications/${id}/read`, { method: "PUT" });
+    setNotifs((prev) => prev.map((n) => n._id === id ? { ...n, is_read: true } : n));
+  };
+
+  const iconMap: Record<string, typeof Bell> = {
+    like: ThumbsUp, comment: MessageCircle, application_update: Briefcase,
+  };
+
+  const unread = notifs.filter((n) => !n.is_read).length;
 
   return (
     <div className="max-w-2xl mx-auto py-8 px-4">
@@ -1798,32 +1892,256 @@ function NotificationsPage() {
         </div>
 
         <div className="divide-y divide-border">
-          {notifs.map((n) => {
+          {loading ? (
+            <div className="p-12 text-center text-sm text-muted-foreground">Cargando...</div>
+          ) : notifs.length === 0 ? (
+            <div className="p-12 text-center">
+              <Bell size={28} className="text-muted-foreground mx-auto mb-2" />
+              <p className="text-sm text-muted-foreground">No tenés notificaciones aún.</p>
+            </div>
+          ) : notifs.map((n) => {
             const Icon = iconMap[n.type] || Bell;
             return (
               <div
-                key={n.id}
-                onClick={() => markRead(n.id)}
-                className={`flex items-start gap-4 px-5 py-4 cursor-pointer transition-colors hover:bg-muted ${!n.read ? "bg-primary/3" : ""}`}
+                key={n._id}
+                onClick={() => markRead(n._id)}
+                className={`flex items-start gap-4 px-5 py-4 cursor-pointer transition-colors hover:bg-muted ${!n.is_read ? "bg-primary/5" : ""}`}
               >
-                <div className="relative shrink-0">
-                  <img src={n.avatar} alt="" className="w-11 h-11 rounded-full object-cover" />
-                  <div className={`absolute -bottom-0.5 -right-0.5 w-5 h-5 rounded-full flex items-center justify-center ${
-                    n.type === "connection" ? "bg-primary" : n.type === "job" ? "bg-[var(--accent)]" : "bg-slate-500"
-                  }`}>
-                    <Icon size={10} className="text-white" />
-                  </div>
+                <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
+                  <Icon size={18} className="text-primary" />
                 </div>
                 <div className="flex-1 min-w-0">
-                  <p className={`text-sm leading-relaxed ${!n.read ? "font-medium text-foreground" : "text-foreground"}`}>{n.text}</p>
-                  <p className="text-xs text-muted-foreground mt-1 flex items-center gap-1"><Clock size={10} /> {n.time}</p>
+                  <p className={`text-sm leading-relaxed ${!n.is_read ? "font-medium text-foreground" : "text-foreground"}`}>{n.body}</p>
+                  <p className="text-xs text-muted-foreground mt-1 flex items-center gap-1">
+                    <Clock size={10} /> {new Date(n.created_at).toLocaleString("es-AR")}
+                  </p>
                 </div>
-                {!n.read && <div className="w-2.5 h-2.5 bg-primary rounded-full shrink-0 mt-1.5" />}
+                {!n.is_read && <div className="w-2.5 h-2.5 bg-primary rounded-full shrink-0 mt-1.5" />}
               </div>
             );
           })}
         </div>
       </div>
+    </div>
+  );
+}
+
+// ─── Groups Page ─────────────────────────────────────────────────────────────
+function GroupsPage({ user }: { user: UserSession }) {
+  const [tab, setTab] = useState<"explore" | "mine">("explore");
+  const [allGroups, setAllGroups] = useState<Group[]>([]);
+  const [myGroups, setMyGroups] = useState<UserGroup[]>([]);
+  const [selected, setSelected] = useState<Group | null>(null);
+  const [members, setMembers] = useState<GroupMember[]>([]);
+  const [myGroupIds, setMyGroupIds] = useState<Set<string>>(new Set());
+  const [showCreate, setShowCreate] = useState(false);
+  const [newGroup, setNewGroup] = useState({ name: "", description: "" });
+  const [creating, setCreating] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [joining, setJoining] = useState(false);
+
+  const inputCls = "w-full bg-input-background border border-border rounded-xl px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/20 transition";
+  const labelCls = "text-xs font-medium text-foreground block mb-1";
+
+  const loadAll = async () => {
+    setLoading(true);
+    const [allRes, myRes] = await Promise.all([
+      fetch(`${API_URL}/groups`),
+      fetch(`${API_URL}/groups/user/${user.user_id}`),
+    ]);
+    if (allRes.ok) setAllGroups(await allRes.json());
+    if (myRes.ok) {
+      const data: UserGroup[] = await myRes.json();
+      setMyGroups(data);
+      setMyGroupIds(new Set(data.map((g) => g.groups.group_id)));
+    }
+    setLoading(false);
+  };
+
+  const loadMembers = async (group_id: string) => {
+    const res = await fetch(`${API_URL}/groups/${group_id}/members`);
+    if (res.ok) setMembers(await res.json());
+  };
+
+  useEffect(() => {
+    loadAll();
+    const interval = setInterval(loadAll, 15000);
+    return () => clearInterval(interval);
+  }, [user.user_id]);
+
+  useEffect(() => {
+    if (!selected) return;
+    const interval = setInterval(() => loadMembers(selected.group_id), 15000);
+    return () => clearInterval(interval);
+  }, [selected?.group_id]);
+
+  const selectGroup = (g: Group) => {
+    setSelected(g);
+    loadMembers(g.group_id);
+  };
+
+  const handleJoin = async () => {
+    if (!selected || joining) return;
+    setJoining(true);
+    const res = await fetch(`${API_URL}/groups/${selected.group_id}/join`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ user_id: user.user_id }),
+    });
+    if (res.ok) {
+      await loadAll();
+      await loadMembers(selected.group_id);
+    }
+    setJoining(false);
+  };
+
+  const handleLeave = async () => {
+    if (!selected) return;
+    const res = await fetch(`${API_URL}/groups/${selected.group_id}/leave`, {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ user_id: user.user_id }),
+    });
+    if (res.ok) {
+      await loadAll();
+      await loadMembers(selected.group_id);
+    }
+  };
+
+  const handleCreate = async () => {
+    if (!newGroup.name.trim()) return;
+    setCreating(true);
+    const res = await fetch(`${API_URL}/groups`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ...newGroup, user_id: user.user_id }),
+    });
+    if (res.ok) {
+      setNewGroup({ name: "", description: "" });
+      setShowCreate(false);
+      await loadAll();
+    }
+    setCreating(false);
+  };
+
+  const displayGroups = tab === "explore" ? allGroups : myGroups.map((g) => g.groups);
+
+  return (
+    <div className="max-w-5xl mx-auto py-8 px-4 space-y-4">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div className="flex gap-2">
+          {[
+            { id: "explore" as const, label: "Explorar grupos" },
+            { id: "mine" as const, label: "Mis grupos" },
+          ].map((t) => (
+            <button key={t.id} onClick={() => setTab(t.id)} className={`px-4 py-2 rounded-xl text-sm font-medium transition-colors ${tab === t.id ? "bg-primary text-primary-foreground" : "bg-card border border-border text-muted-foreground hover:text-foreground"}`}>
+              {t.label}
+            </button>
+          ))}
+        </div>
+        <button onClick={() => setShowCreate(!showCreate)} className="flex items-center gap-2 text-sm bg-primary text-primary-foreground px-4 py-2 rounded-xl hover:opacity-90 transition-opacity">
+          <Plus size={15} /> Crear grupo
+        </button>
+      </div>
+
+      {/* Create form */}
+      {showCreate && (
+        <div className="bg-card rounded-2xl border border-border p-5 space-y-3">
+          <p className="font-semibold text-foreground text-sm">Nuevo grupo</p>
+          <div><label className={labelCls}>Nombre *</label><input className={inputCls} placeholder="Ej: Desarrolladores Buenos Aires" value={newGroup.name} onChange={(e) => setNewGroup({ ...newGroup, name: e.target.value })} /></div>
+          <div><label className={labelCls}>Descripción / Tema</label><textarea rows={2} className={inputCls + " resize-none"} placeholder="De qué trata el grupo..." value={newGroup.description} onChange={(e) => setNewGroup({ ...newGroup, description: e.target.value })} /></div>
+          <div className="flex gap-2 justify-end">
+            <button onClick={() => setShowCreate(false)} className="text-sm text-muted-foreground px-3 py-1.5 rounded-lg hover:bg-border transition-colors">Cancelar</button>
+            <button onClick={handleCreate} disabled={creating || !newGroup.name.trim()} className="text-sm bg-primary text-primary-foreground px-4 py-1.5 rounded-lg hover:opacity-90 disabled:opacity-60 transition-opacity">{creating ? "Creando..." : "Crear"}</button>
+          </div>
+        </div>
+      )}
+
+      {loading ? (
+        <div className="text-center py-12 text-sm text-muted-foreground">Cargando...</div>
+      ) : displayGroups.length === 0 ? (
+        <div className="bg-card rounded-2xl border border-border p-12 text-center">
+          <UsersRound size={32} className="text-muted-foreground mx-auto mb-3" />
+          <p className="text-muted-foreground text-sm">{tab === "mine" ? "Todavía no pertenecés a ningún grupo." : "No hay grupos aún. ¡Creá el primero!"}</p>
+        </div>
+      ) : (
+        <div className="grid grid-cols-5 gap-4">
+          {/* Lista */}
+          <div className="col-span-2 space-y-3">
+            {displayGroups.map((g) => (
+              <div key={g.group_id} onClick={() => selectGroup(g)} className={`bg-card rounded-2xl border cursor-pointer transition-all p-4 hover:shadow-md ${selected?.group_id === g.group_id ? "border-primary shadow-md" : "border-border"}`}>
+                <div className="flex items-start gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center shrink-0">
+                    <UsersRound size={18} className="text-primary" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="font-semibold text-sm text-foreground truncate">{g.name}</p>
+                    {g.description && <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">{g.description}</p>}
+                    <div className="flex items-center gap-2 mt-1.5">
+                      {myGroupIds.has(g.group_id) && (
+                        <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full font-medium">Miembro</span>
+                      )}
+                      {g.admin_id === user.user_id && (
+                        <span className="text-xs bg-primary/10 text-primary px-2 py-0.5 rounded-full font-medium">Admin</span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* Detalle */}
+          {selected && (
+            <div className="col-span-3 bg-card rounded-2xl border border-border p-6 h-fit sticky top-4">
+              <div className="flex items-start gap-4 mb-4">
+                <div className="w-14 h-14 rounded-xl bg-primary/10 flex items-center justify-center shrink-0">
+                  <UsersRound size={24} className="text-primary" />
+                </div>
+                <div className="flex-1">
+                  <h2 className="font-display text-xl font-semibold text-foreground">{selected.name}</h2>
+                  {selected.description && <p className="text-muted-foreground text-sm mt-1">{selected.description}</p>}
+                  <p className="text-xs text-muted-foreground mt-1">{members.length} {members.length === 1 ? "miembro" : "miembros"}</p>
+                </div>
+              </div>
+
+              {/* Botón unirse / salir */}
+              {selected.admin_id !== user.user_id && (
+                myGroupIds.has(selected.group_id) ? (
+                  <button onClick={handleLeave} className="w-full mb-4 py-2.5 rounded-xl text-sm font-semibold border border-border text-muted-foreground hover:bg-muted transition-colors">
+                    Salir del grupo
+                  </button>
+                ) : (
+                  <button onClick={handleJoin} disabled={joining} className="w-full mb-4 py-2.5 rounded-xl text-sm font-semibold bg-primary text-primary-foreground hover:opacity-90 disabled:opacity-60 transition-opacity">
+                    {joining ? "Uniéndose..." : "Unirme al grupo"}
+                  </button>
+                )
+              )}
+
+              {/* Miembros */}
+              <p className="text-sm font-semibold text-foreground mb-3">Miembros</p>
+              <div className="space-y-3 max-h-72 overflow-y-auto">
+                {members.map((m) => (
+                  <div key={m.users.user_id} className="flex items-center gap-3">
+                    {m.users.profile_photo_url ? (
+                      <img src={m.users.profile_photo_url} alt={m.users.name} className="w-9 h-9 rounded-full object-cover shrink-0" />
+                    ) : (
+                      <div className="w-9 h-9 rounded-full bg-primary/20 flex items-center justify-center text-primary font-bold text-sm shrink-0">{m.users.name[0]}</div>
+                    )}
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-foreground truncate">{m.users.name}{m.users.surname ? ` ${m.users.surname}` : ""}</p>
+                    </div>
+                    <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${m.role === "admin" ? "bg-primary/10 text-primary" : "bg-muted text-muted-foreground"}`}>
+                      {m.role === "admin" ? "Admin" : "Miembro"}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -1852,8 +2170,9 @@ export default function App() {
     profile: <ProfilePage user={currentUser} onUserUpdate={setCurrentUser} />,
     network: <NetworkPage />,
     jobs: <JobsPage user={currentUser!} />,
+    groups: <GroupsPage user={currentUser} />,
     messages: <MessagesPage />,
-    notifications: <NotificationsPage />,
+    notifications: <NotificationsPage user={currentUser} />,
   };
 
   return (

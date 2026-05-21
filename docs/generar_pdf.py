@@ -95,9 +95,17 @@ pdf.titulo("1. Contexto del trabajo practico")
 pdf.parrafo(
     "El TP consiste en construir una red social similar a LinkedIn integrando multiples motores de bases de "
     "datos para distintas funcionalidades. La consigna exige usar al menos una base de datos relacional (SQL), "
-    "una documental (MongoDB) y una de grafos o clave-valor. La eleccion de que tecnologia usar para cada modulo "
-    "debe estar justificada por las caracteristicas propias de los datos y las operaciones que se realizan sobre ellos."
+    "una documental (MongoDB) y otras tecnologias complementarias (Cassandra, Neo4j). La eleccion de que "
+    "tecnologia usar para cada modulo debe estar justificada por las caracteristicas propias de los datos "
+    "y las operaciones que se realizan sobre ellos."
 )
+pdf.parrafo(
+    "La arquitectura final del sistema distribuye las responsabilidades de la siguiente manera:"
+)
+pdf.bullet("SQL (PostgreSQL / Supabase): usuarios, perfiles, empleos, postulaciones y grupos.")
+pdf.bullet("MongoDB Atlas: feed social (publicaciones, likes, comentarios).")
+pdf.bullet("Cassandra (implementacion futura): notificaciones y mensajes directos.")
+pdf.bullet("Neo4j (implementacion futura): red de conexiones entre usuarios.")
 
 # ── 2. Funcionalidades
 pdf.titulo("2. Funcionalidades implementadas sobre SQL")
@@ -107,11 +115,12 @@ pdf.ln(1)
 anchos = [55, 135]
 pdf.tabla_encabezado(["Modulo", "Tablas involucradas"], anchos)
 filas = [
-    ("Usuarios y autenticacion", "users, roles, user_roles"),
-    ("Perfil profesional", "users, work experience, education, skills, user_skill"),
-    ("Empresas", "companies"),
-    ("Ofertas de empleo", "jobs, job_skill"),
-    ("Postulaciones", "applications"),
+    ("Autenticacion (RF1)", "users, roles, user_roles"),
+    ("Perfil profesional (RF1)", "users, work experience, education, skills, user_skill"),
+    ("Empresas (RF3)", "companies"),
+    ("Ofertas de empleo (RF3)", "jobs, job_skill"),
+    ("Postulaciones (RF3)", "applications"),
+    ("Grupos y miembros (RF5)", "groups, group_members"),
 ]
 for i, (m, t) in enumerate(filas):
     pdf.tabla_fila([m, t], anchos, fill=(i % 2 == 0))
@@ -122,14 +131,15 @@ pdf.titulo("3. Por que SQL para estas funcionalidades")
 
 pdf.subtitulo("3.1 Integridad referencial y relaciones fuertes")
 pdf.parrafo(
-    "Los datos de usuarios, perfiles, empleos y postulaciones estan fuertemente relacionados entre si. "
+    "Los datos de usuarios, perfiles, empleos, postulaciones y grupos estan fuertemente relacionados entre si. "
     "Las claves foraneas de SQL garantizan que no existan postulaciones huerfanas, ni ofertas que referencien "
-    "usuarios o empresas inexistentes. Esto seria mucho mas dificil de garantizar en una base de datos documental "
-    "sin logica de aplicacion adicional."
+    "usuarios inexistentes, ni miembros de grupos sin usuario valido. Esto seria mucho mas dificil de garantizar "
+    "en una base de datos documental sin logica de aplicacion adicional."
 )
-pdf.bullet("Una oferta de empleo (jobs) pertenece a un usuario (poster_user_id -> users.user_id) y opcionalmente a una empresa (company_id -> companies).")
-pdf.bullet("Una postulacion (applications) vincula un usuario con una oferta (user_id -> users, job_id -> jobs).")
-pdf.bullet("Las habilidades del usuario (user_skill) y las requeridas por una oferta (job_skill) referencian el catalogo comun skills.")
+pdf.bullet("Una oferta (jobs) pertenece a un usuario poster (ON DELETE CASCADE) y a una empresa.")
+pdf.bullet("Una postulacion (applications) vincula usuario y oferta con CASCADE en ambas FKs.")
+pdf.bullet("Un grupo (groups) tiene un administrador; group_members vincula usuarios con grupos.")
+pdf.bullet("Las skills son compartidas por user_skill y job_skill sin duplicacion.")
 pdf.ln(3)
 
 pdf.subtitulo("3.2 Consultas relacionales complejas en una sola operacion")
@@ -143,81 +153,76 @@ pdf.codigo(
     "  +-- job_skill\n"
     "        +-- skills(skill_id, name, type)"
 )
-pdf.parrafo(
-    "Y al listar postulaciones de un usuario:"
-)
+pdf.parrafo("Al listar miembros de un grupo:")
 pdf.codigo(
-    "applications\n"
-    "  +-- jobs\n"
-    "  |     +-- companies(name)\n"
-    "  +-- users(user_id, name, surname, email, profile_photo_url)"
-)
-pdf.parrafo(
-    "Con documentos MongoDB habria que hacer multiples consultas o disenar documentos embebidos que no "
-    "representan bien la realidad del modelo, ya que las mismas skills son compartidas por usuarios y ofertas, "
-    "y las mismas companies son compartidas por experiencias laborales y ofertas."
+    "group_members\n"
+    "  +-- users(user_id, name, surname, profile_photo_url)"
 )
 
 pdf.subtitulo("3.3 Normalizacion: evitar duplicacion de datos")
 pdf.parrafo(
-    "El catalogo de habilidades (skills) es un claro ejemplo de por que la normalizacion relacional es conveniente:"
+    "El catalogo de habilidades (skills) es un claro ejemplo de normalizacion relacional:"
 )
 pdf.bullet('Una habilidad como "Python" existe una sola vez en la tabla skills.')
-pdf.bullet("Tanto el perfil de un usuario (user_skill) como una oferta de empleo (job_skill) la referencian mediante su skill_id.")
-pdf.bullet("Si el nombre de una habilidad cambiara, se actualiza en un unico lugar.")
+pdf.bullet("Tanto user_skill como job_skill la referencian por skill_id.")
+pdf.bullet("Las empresas (companies) son referenciadas tanto por jobs como por work experience.")
 pdf.parrafo(
-    'Con un modelo documental, "Python" apareceria embebida en el documento de cada usuario y en el de cada oferta, '
-    "generando inconsistencias."
+    "Con un modelo documental, estas entidades aparecerian duplicadas en cada documento."
 )
 
 pdf.subtitulo("3.4 Unicidad y restricciones de negocio")
-pdf.parrafo(
-    "SQL permite declarar restricciones directamente en el esquema, garantizandolas en la capa de almacenamiento:"
-)
 pdf.bullet("users.email es UNIQUE: no pueden existir dos cuentas con el mismo email.")
 pdf.bullet("users.dni es UNIQUE: no puede haber duplicados de documento.")
-pdf.bullet("applications(job_id, user_id) es unico: un usuario no puede postularse dos veces a la misma oferta.")
-pdf.bullet("Campos como is_active, status e is_current tienen valores por defecto y restricciones de tipo.")
+pdf.bullet("applications(user_id, job_id) es UNIQUE: un usuario no puede postularse dos veces.")
+pdf.bullet("skills.name es UNIQUE: no hay habilidades duplicadas en el catalogo.")
+pdf.bullet("group_members(group_id, user_id) es PK compuesta: un usuario no puede unirse dos veces.")
 pdf.ln(2)
 
-pdf.subtitulo("3.5 Transacciones ACID")
+pdf.subtitulo("3.5 ON DELETE CASCADE: integridad en cascada")
 pdf.parrafo(
-    "Las operaciones criticas del sistema requieren atomicidad:"
+    "Todas las relaciones criticas tienen ON DELETE CASCADE para garantizar que al eliminar "
+    "una entidad raiz no queden registros huerfanos en la base de datos:"
 )
-pdf.bullet("Al registrar un usuario: se inserta en users y se asignan roles en user_roles. Si una operacion falla, la cuenta no queda en estado inconsistente.")
-pdf.bullet("Al publicar una oferta con habilidades: se inserta en jobs y luego en job_skill de forma atomica.")
-pdf.parrafo(
-    "Las garantias ACID (Atomicidad, Consistencia, Aislamiento, Durabilidad) de PostgreSQL aseguran "
-    "consistencia incluso bajo fallas parciales o concurrencia de multiples usuarios."
-)
+pdf.bullet("Eliminar usuario -> borra user_roles, work experience, education, user_skill, jobs publicados, applications.")
+pdf.bullet("Eliminar oferta -> borra job_skill y applications asociadas.")
+pdf.bullet("Eliminar grupo -> borra group_members automaticamente.")
+pdf.ln(2)
 
-pdf.subtitulo("3.6 Esquema predecible para datos estructurados")
+pdf.subtitulo("3.6 Triggers: updated_at automatico")
 pdf.parrafo(
-    "Los datos de usuarios, perfiles y empleos tienen una estructura fija y bien definida: todos los usuarios "
-    "tienen nombre, email y contrasena; todas las ofertas tienen titulo, modalidad y estado. Esta homogeneidad "
-    "favorece el modelo relacional. Un motor documental como MongoDB es mas conveniente cuando los datos son "
-    "heterogeneos o evolucionan rapidamente en estructura (por ejemplo, el contenido de posts o comentarios)."
+    "Se implementaron triggers en PostgreSQL para mantener el campo updated_at actualizado "
+    "automaticamente en las tablas que lo requieren, sin necesidad de hacerlo desde el backend:"
 )
-
-# ── 4. Queries ejecutadas desde el backend
-pdf.titulo("4. Queries ejecutadas desde el backend")
-pdf.parrafo(
-    "El backend (Flask) dispara las queries SQL automaticamente al iniciar, creando las tablas si no existen "
-    "(via init_db.py con psycopg2). Durante la ejecucion, cada ruta accede a Supabase usando el SDK PostgREST, "
-    "que construye y ejecuta las queries SQL internamente. A continuacion se detallan las operaciones por modulo:"
-)
-
-pdf.subtitulo("4.1 Modulo de autenticacion (auth.py)")
-pdf.parrafo("REGISTRO - Inserta usuario y asigna rol. Si el rol es 'poster', busca o crea la empresa:")
 pdf.codigo(
-    "INSERT INTO users (user_id, email, password_hash, name, surname, dni)\n"
-    "  VALUES ($1, $2, $3, $4, $5, $6)\n\n"
-    "SELECT company_id FROM companies WHERE name ILIKE $1 LIMIT 1\n"
-    "-- Si no existe:\n"
-    "INSERT INTO companies (company_id, name) VALUES ($1, $2)\n\n"
-    "INSERT INTO user_roles (user_id, role_id) VALUES ($1, $2)"
+    "CREATE OR REPLACE FUNCTION set_updated_at()\n"
+    "RETURNS TRIGGER AS $$\n"
+    "BEGIN\n"
+    "    NEW.updated_at = CURRENT_TIMESTAMP;\n"
+    "    RETURN NEW;\n"
+    "END;\n"
+    "$$ LANGUAGE plpgsql;\n\n"
+    "-- Aplicado en: users, jobs, applications"
 )
-pdf.parrafo("LOGIN - Busca el usuario por email y verifica la contrasena con bcrypt:")
+
+pdf.subtitulo("3.7 Transacciones ACID")
+pdf.parrafo(
+    "Las operaciones criticas requieren atomicidad: al registrar un usuario se insertan datos "
+    "en users y user_roles; al publicar una oferta se insertan en jobs y job_skill. "
+    "Las garantias ACID de PostgreSQL aseguran consistencia bajo fallas o concurrencia."
+)
+
+# ── 4. Queries
+pdf.titulo("4. Queries ejecutadas desde el backend")
+
+pdf.subtitulo("4.1 Autenticacion (auth.py)")
+pdf.parrafo("REGISTRO:")
+pdf.codigo(
+    "INSERT INTO users (user_id, email, password_hash, name, surname, dni) VALUES (...)\n\n"
+    "SELECT company_id FROM companies WHERE name ILIKE $1 LIMIT 1\n"
+    "INSERT INTO companies (company_id, name, slogan) VALUES (...)\n\n"
+    "INSERT INTO user_roles (user_id, role_id) VALUES (...)"
+)
+pdf.parrafo("LOGIN:")
 pdf.codigo(
     "SELECT user_id, email, name, surname, dni, profile_photo_url, password_hash\n"
     "  FROM users WHERE email = $1 LIMIT 1\n\n"
@@ -225,189 +230,145 @@ pdf.codigo(
     "  JOIN roles ON user_roles.role_id = roles.role_id\n"
     "  WHERE user_roles.user_id = $1"
 )
-pdf.parrafo("CAMBIAR CONTRASENA (reset):")
-pdf.codigo(
-    "UPDATE users SET password_hash = $1 WHERE user_id = $2\n"
-    "-- Nota: el token de reset se guarda en memoria del servidor (dict Python),\n"
-    "-- no en la base de datos, para simplificar el entorno de desarrollo."
-)
+pdf.parrafo("ELIMINAR CUENTA (ON DELETE CASCADE elimina todo en cascada):")
+pdf.codigo("DELETE FROM users WHERE user_id = $1")
 
-pdf.subtitulo("4.2 Modulo de perfil (profile.py)")
-pdf.parrafo("ACTUALIZAR DATOS PERSONALES:")
+pdf.subtitulo("4.2 Perfil (profile.py)")
+pdf.parrafo("ACTUALIZAR DATOS / FOTO:")
 pdf.codigo(
-    "UPDATE users SET name=$1, surname=$2, dni=$3, updated_at=now()\n"
-    "  WHERE user_id = $4\n\n"
-    "-- Foto: se guarda en backend/static/photos/ y se actualiza la URL:\n"
-    "UPDATE users SET profile_photo_url=$1 WHERE user_id = $2"
+    "UPDATE users SET name=$1, surname=$2, dni=$3, updated_at=now() WHERE user_id=$4\n"
+    "UPDATE users SET profile_photo_url=$1 WHERE user_id=$2\n"
+    "-- La foto se sube a Supabase Storage (bucket 'avatars', acceso publico)"
 )
-pdf.parrafo("EXPERIENCIA LABORAL (work experience):")
+pdf.parrafo("EXPERIENCIA LABORAL:")
 pdf.codigo(
-    "-- Listar:\n"
     "SELECT we.*, companies.name FROM \"work experience\" we\n"
     "  LEFT JOIN companies ON we.company_id = companies.company_id\n"
-    "  WHERE we.user_id = $1 ORDER BY from_date DESC\n\n"
-    "-- Agregar:\n"
-    "INSERT INTO \"work experience\"\n"
-    "  (user_id, company_id, title, description, from_date, end_date, is_current)\n"
-    "  VALUES ($1, $2, $3, $4, $5, $6, $7)\n\n"
-    "-- Eliminar:\n"
+    "  WHERE we.user_id=$1 ORDER BY from_date DESC\n\n"
+    "INSERT INTO \"work experience\" (user_id, company_id, title, description, from_date, end_date, is_current)\n"
+    "  VALUES (...)\n\n"
     "DELETE FROM \"work experience\" WHERE we_id=$1 AND user_id=$2"
 )
-pdf.parrafo("EDUCACION:")
+pdf.parrafo("HABILIDADES:")
 pdf.codigo(
-    "-- Listar:\n"
-    "SELECT * FROM education WHERE user_id=$1 ORDER BY from_date DESC\n\n"
-    "-- Agregar:\n"
-    "INSERT INTO education\n"
-    "  (user_id, title, field, institution, from_date, end_date, is_actual)\n"
-    "  VALUES ($1, $2, $3, $4, $5, $6, $7)\n\n"
-    "-- Eliminar:\n"
-    "DELETE FROM education WHERE edu_id=$1 AND user_id=$2"
-)
-pdf.parrafo("HABILIDADES (skills / user_skill):")
-pdf.codigo(
-    "-- Buscar o crear skill en el catalogo:\n"
     "SELECT skill_id FROM skills WHERE name ILIKE $1 LIMIT 1\n"
     "INSERT INTO skills (name, type) VALUES ($1, $2)\n\n"
-    "-- Agregar o actualizar nivel de una habilidad en el perfil:\n"
     "INSERT INTO user_skill (user_id, skill_id, level) VALUES ($1, $2, $3)\n"
     "  ON CONFLICT (user_id, skill_id) DO UPDATE SET level=$3\n\n"
-    "-- Listar habilidades del perfil:\n"
-    "SELECT us.level, s.skill_id, s.name, s.type\n"
-    "  FROM user_skill us JOIN skills s ON us.skill_id = s.skill_id\n"
-    "  WHERE us.user_id = $1\n\n"
-    "-- Eliminar:\n"
     "DELETE FROM user_skill WHERE user_id=$1 AND skill_id=$2"
 )
 
-pdf.subtitulo("4.3 Modulo de empleos (jobs.py)")
-pdf.parrafo("LISTAR OFERTAS ACTIVAS - JOIN con companies y skills en una sola operacion:")
+pdf.subtitulo("4.3 Empleos y postulaciones (jobs.py)")
+pdf.parrafo("LISTAR OFERTAS ACTIVAS:")
 pdf.codigo(
-    "-- El SDK PostgREST ejecuta internamente:\n"
-    "SELECT jobs.*, companies.name,\n"
-    "       job_skill.skill_id, skills.name, skills.type\n"
+    "SELECT jobs.*, companies.name, skills.skill_id, skills.name, skills.type\n"
     "  FROM jobs\n"
     "  LEFT JOIN companies ON jobs.company_id = companies.company_id\n"
     "  LEFT JOIN job_skill  ON job_skill.job_id = jobs.job_id\n"
     "  LEFT JOIN skills     ON skills.skill_id  = job_skill.skill_id\n"
-    "  WHERE jobs.is_active = TRUE\n"
-    "  ORDER BY jobs.created_at DESC"
+    "  WHERE jobs.is_active = TRUE ORDER BY jobs.created_at DESC"
 )
-pdf.parrafo("CREAR OFERTA Y AGREGAR SKILLS:")
+pdf.parrafo("CREAR OFERTA (con ownership check en edicion y eliminacion):")
 pdf.codigo(
-    "INSERT INTO jobs\n"
-    "  (job_id, poster_user_id, company_id, title, description,\n"
-    "   location, shift, modality, is_active)\n"
-    "  VALUES ($1,$2,$3,$4,$5,$6,$7,$8,TRUE)\n\n"
-    "-- Para cada skill requerida:\n"
-    "INSERT INTO job_skill (job_id, skill_id) VALUES ($1, $2)"
+    "INSERT INTO jobs (job_id, poster_user_id, company_id, title, description,\n"
+    "  location, working_hours, shift, modality, employment_type, is_active)\n"
+    "  VALUES (...)\n\n"
+    "INSERT INTO job_skill (job_id, skill_id) VALUES ($1, $2)\n\n"
+    "-- Al eliminar: ON DELETE CASCADE borra job_skill y applications"
 )
-pdf.parrafo("ELIMINAR OFERTA - ON DELETE CASCADE elimina automaticamente job_skill y applications:")
+pdf.parrafo("POSTULACIONES:")
 pdf.codigo(
-    "DELETE FROM jobs WHERE job_id=$1\n"
-    "-- Cascade: borra automaticamente job_skill y applications asociadas"
+    "INSERT INTO applications (application_id, job_id, user_id, status) VALUES (...)\n"
+    "-- UNIQUE (user_id, job_id) previene duplicados\n\n"
+    "UPDATE applications SET status=$1, updated_at=now() WHERE application_id=$2\n"
+    "-- Estados: submitted | in_review | in_process | successful | rejected"
 )
 
-pdf.subtitulo("4.4 Modulo de postulaciones (jobs.py)")
-pdf.parrafo("POSTULARSE A UNA OFERTA:")
+pdf.subtitulo("4.4 Grupos (groups.py)")
+pdf.parrafo("CREAR GRUPO Y AUTO-UNIRSE COMO ADMIN:")
 pdf.codigo(
-    "INSERT INTO applications (application_id, job_id, user_id, status)\n"
-    "  VALUES ($1, $2, $3, 'submitted')\n"
-    "-- UNIQUE (job_id, user_id) impide postulaciones duplicadas"
+    "INSERT INTO groups (group_id, name, description, admin_id) VALUES (...)\n\n"
+    "INSERT INTO group_members (group_id, user_id, role) VALUES ($1, $2, 'admin')"
 )
-pdf.parrafo("VER MIS POSTULACIONES (candidato) - JOIN de 3 tablas:")
+pdf.parrafo("UNIRSE / SALIR DEL GRUPO:")
 pdf.codigo(
-    "SELECT applications.*, jobs.job_id, jobs.title,\n"
-    "       companies.name, users.user_id, users.name,\n"
-    "       users.surname, users.email\n"
-    "  FROM applications\n"
-    "  LEFT JOIN jobs      ON applications.job_id  = jobs.job_id\n"
-    "  LEFT JOIN companies ON jobs.company_id       = companies.company_id\n"
-    "  LEFT JOIN users     ON applications.user_id  = users.user_id\n"
-    "  WHERE applications.user_id = $1\n"
-    "  ORDER BY applications.applied_at DESC"
+    "-- Verificar si ya es miembro:\n"
+    "SELECT group_id FROM group_members\n"
+    "  WHERE group_id=$1 AND user_id=$2 LIMIT 1\n\n"
+    "-- Unirse:\n"
+    "INSERT INTO group_members (group_id, user_id, role) VALUES ($1, $2, 'member')\n\n"
+    "-- Salir (el admin no puede salir):\n"
+    "DELETE FROM group_members WHERE group_id=$1 AND user_id=$2"
 )
-pdf.parrafo("VER POSTULANTES DE UNA OFERTA (poster) Y CAMBIAR ESTADO:")
+pdf.parrafo("LISTAR MIEMBROS:")
 pdf.codigo(
-    "SELECT applications.*, users.name, users.surname,\n"
-    "       users.email, users.profile_photo_url\n"
-    "  FROM applications\n"
-    "  JOIN users ON applications.user_id = users.user_id\n"
-    "  WHERE applications.job_id = $1\n\n"
-    "UPDATE applications SET status=$1, updated_at=now()\n"
-    "  WHERE application_id=$2"
+    "SELECT gm.role, gm.joined_at,\n"
+    "       users.user_id, users.name, users.surname, users.profile_photo_url\n"
+    "  FROM group_members gm\n"
+    "  JOIN users ON gm.user_id = users.user_id\n"
+    "  WHERE gm.group_id = $1"
 )
 
 # ── 5. Diagrama
 pdf.titulo("5. Diagrama de relaciones (simplificado)")
 pdf.codigo(
-    "users ----------------------- user_roles ---- roles\n"
+    "users -------- user_roles ---- roles\n"
     "  |\n"
     "  +--- work experience ---- companies\n"
     "  +--- education\n"
     "  +--- user_skill ----------------------------- skills\n"
     "  |                                                |\n"
     "  +--- jobs (poster_user_id) --- companies         |\n"
-    "         |                                         |\n"
-    "         +--- job_skill --------------------------++\n"
-    "         |\n"
-    "         +--- applications ---- users"
+    "  |      |                                         |\n"
+    "  |      +--- job_skill --------------------------++\n"
+    "  |      |\n"
+    "  |      +--- applications\n"
+    "  |\n"
+    "  +--- groups (admin_id)\n"
+    "  |      |\n"
+    "  |      +--- group_members\n"
+    "  |\n"
+    "  (conexiones) -----> Neo4j (implementacion futura)"
 )
 
-# ── 5. Arquitectura
+# ── 6. Arquitectura
 pdf.titulo("6. Integracion en la arquitectura del sistema")
-
-pdf.subtitulo("Backend: Flask + Supabase Python SDK")
 pdf.parrafo(
-    "El backend expone una API REST construida con Flask, organizada en blueprints por dominio:"
+    "El backend Flask expone una API REST organizada en blueprints por dominio. "
+    "Cada blueprint interactua con Supabase mediante el cliente supabase_admin:"
 )
-pdf.bullet("/auth  -> auth_bp: registro, login, recuperacion de contrasena.")
-pdf.bullet("/profile -> profile_bp: datos del perfil, foto, experiencia, educacion, habilidades.")
-pdf.bullet("/jobs -> jobs_bp: listado de ofertas, publicacion, postulaciones, gestion de candidatos.")
-pdf.parrafo(
-    "Cada blueprint interactua con Supabase mediante el cliente supabase_admin (clave de servicio), "
-    "que ejecuta queries sobre PostgreSQL usando la API PostgREST."
-)
-
-pdf.subtitulo("Supabase como infraestructura SQL")
-pdf.bullet("PostgreSQL gestionado: base de datos relacional con todas las garantias de consistencia.")
-pdf.bullet("PostgREST: convierte automaticamente las tablas en endpoints REST con soporte de filtros, joins y paginacion.")
-pdf.bullet("Fotos de perfil: se almacenan en el sistema de archivos del servidor Flask (static/photos/) y se sirven como archivos estaticos desde http://localhost:5000/static/photos/. La URL resultante se guarda en el campo profile_photo_url de la tabla users.")
-pdf.bullet("Row Level Security (RLS): politicas de acceso a nivel de fila. En el TP se usa la clave service_role desde el backend.")
-pdf.bullet("Tokens de recuperacion de contrasena: se almacenan en memoria del servidor (diccionario Python) durante la sesion activa, con expiracion de 1 hora. Este enfoque simplifica el desarrollo evitando una tabla de tokens en la BD.")
+pdf.bullet("/auth     -> auth_bp:    registro, login, recuperacion de contrasena, eliminacion de cuenta.")
+pdf.bullet("/profile  -> profile_bp: perfil, foto (Supabase Storage), experiencia, educacion, habilidades.")
+pdf.bullet("/jobs     -> jobs_bp:    ofertas, postulaciones, gestion de candidatos.")
+pdf.bullet("/groups   -> groups_bp:  creacion de grupos, membresia, listado de miembros.")
 pdf.ln(2)
+pdf.parrafo("Las notificaciones (RF6) se implementaran con Cassandra. Las conexiones entre usuarios (RF2) se implementaran con Neo4j.")
 
-# ── 6. Comparacion
+# ── 7. Comparacion
 pdf.titulo("7. Comparacion con las otras bases del proyecto")
 pdf.ln(1)
 
-anchos2 = [42, 50, 50, 48]
-pdf.tabla_encabezado(["Criterio", "SQL (PostgreSQL)", "MongoDB (documental)", "Grafo / Clave-valor"], anchos2)
+anchos2 = [38, 38, 38, 38, 38]
+pdf.tabla_encabezado(["Criterio", "SQL", "MongoDB", "Cassandra", "Neo4j"], anchos2)
 comp = [
-    ("Estructura", "Fija, tabular", "Flexible, anidada", "Relaciones / pares"),
-    ("Relaciones", "Claves foraneas, JOINs", "Referencias manuales", "Aristas del grafo"),
-    ("Caso de uso TP", "Usuarios, perfiles, empleos", "Posts, comentarios, grupos", "Conexiones entre usuarios"),
-    ("Justificacion", "Datos con muchas relaciones", "Contenido heterogeneo", "Traversals de red social"),
+    ("Caso de uso", "Usuarios, empleos, grupos", "Feed social", "Notif., mensajes", "Conexiones"),
+    ("Relaciones", "FK, JOINs, CASCADE", "Referencias manuales", "Partition key", "Aristas del grafo"),
+    ("Esquema", "Fijo, tabular", "Flexible, JSON", "Columnar", "Nodos y aristas"),
+    ("Fortaleza", "Integridad, ACID", "Vol. escrituras", "Alta disponib.", "Traversals"),
 ]
 for i, fila in enumerate(comp):
     pdf.tabla_fila(list(fila), anchos2, fill=(i % 2 == 0))
 pdf.ln(4)
 
-# ── 7. Conclusion
+# ── 8. Conclusion
 pdf.titulo("8. Conclusion")
-pdf.parrafo("La eleccion de SQL para los modulos de usuarios, perfiles, empleos y postulaciones esta justificada por:")
-pdf.bullet("La naturaleza relacional de los datos: usuarios, empresas, ofertas y postulaciones se interconectan mediante referencias que deben ser consistentes.")
-pdf.bullet("La necesidad de integridad referencial: las claves foraneas garantizan que los datos no queden en estados invalidos.")
-pdf.bullet("La eficiencia de las consultas con JOINs: se obtienen datos de multiples tablas en una unica operacion.")
-pdf.bullet("La normalizacion: skills y companies son entidades compartidas que no deben duplicarse.")
-pdf.bullet("Las restricciones de unicidad: email, DNI y postulaciones unicas por usuario/oferta son propiedades del esquema.")
-pdf.bullet("Las garantias ACID: operaciones criticas como el registro de usuarios o la publicacion de ofertas son atomicas.")
-pdf.ln(3)
-pdf.parrafo(
-    "Estas caracteristicas hacen de PostgreSQL/Supabase la tecnologia adecuada para el nucleo transaccional "
-    "del sistema, mientras que MongoDB y otras bases complementan el sistema para datos menos estructurados "
-    "como publicaciones, comentarios y conexiones sociales."
-)
+pdf.parrafo("La eleccion de SQL para los modulos de autenticacion, perfiles, empleos y grupos esta justificada por:")
+pdf.bullet("Integridad referencial: claves foraneas con ON DELETE CASCADE garantizan consistencia.")
+pdf.bullet("Normalizacion: skills y companies son entidades compartidas sin duplicacion.")
+pdf.bullet("Unicidad: email, DNI, postulaciones y membresías unicas a nivel de esquema.")
+pdf.bullet("Transacciones ACID: operaciones criticas son atomicas bajo fallas o concurrencia.")
+pdf.bullet("Triggers: updated_at automatico sin logica adicional en el backend.")
+pdf.bullet("Consultas complejas: JOINs eficientes a traves de PostgREST en una sola operacion.")
 
 out = r"c:\Users\maria\Desktop\tpoLinkedin\TPO-Linkedin\docs\sql-justificacion.pdf"
 pdf.output(out)

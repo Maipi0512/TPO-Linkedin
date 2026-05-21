@@ -100,9 +100,17 @@ pdf.parrafo(
     "tecnologia segun las caracteristicas propias de los datos y las operaciones requeridas."
 )
 pdf.parrafo(
-    "MongoDB se selecciono para el modulo del feed social: publicaciones, likes y comentarios. Este modulo "
-    "concentra el mayor volumen de escrituras y lecturas del sistema y tiene caracteristicas que lo hacen "
-    "inadecuado para un modelo relacional estricto."
+    "El sistema LinkPro distribuye los datos en cuatro motores especializados:"
+)
+pdf.bullet("PostgreSQL/Supabase (SQL): usuarios, perfiles, empleos, postulaciones y grupos.")
+pdf.bullet("MongoDB Atlas (documental): feed social - publicaciones, likes y comentarios.")
+pdf.bullet("Cassandra (columnar distribuido): notificaciones y mensajes directos entre usuarios. [pendiente]")
+pdf.bullet("Neo4j (grafos): conexiones entre usuarios y matching de habilidades. [pendiente]")
+pdf.ln(2)
+pdf.parrafo(
+    "Este documento justifica el uso de MongoDB para el modulo del feed social: publicaciones, likes y "
+    "comentarios. Este modulo concentra el mayor volumen de escrituras y lecturas del sistema y tiene "
+    "caracteristicas que lo hacen inadecuado para un modelo relacional estricto."
 )
 
 # ── 2. Funcionalidades
@@ -458,17 +466,25 @@ pdf.codigo(
     "        |\n"
     "        v\n"
     "Backend Flask (Python)\n"
-    "  +-- /auth, /profile, /jobs  -->  Supabase (PostgreSQL/SQL)\n"
-    "  |                                Usuarios, perfiles, empleos, postulaciones\n"
+    "  +-- /auth, /profile, /jobs, /groups  -->  Supabase (PostgreSQL)\n"
+    "  |                                         Usuarios, perfiles, empleos,\n"
+    "  |                                         postulaciones, grupos\n"
     "  |\n"
-    "  +-- /posts                  -->  MongoDB Atlas\n"
-    "                                   Posts, likes, comentarios (feed)"
+    "  +-- /posts                           -->  MongoDB Atlas\n"
+    "  |                                         Posts, likes, comentarios (feed)\n"
+    "  |\n"
+    "  +-- /notifications, /messages        -->  Cassandra [pendiente]\n"
+    "  |                                         Notificaciones, mensajes directos\n"
+    "  |\n"
+    "  +-- /connections                     -->  Neo4j [pendiente]\n"
+    "                                            Conexiones entre usuarios"
 )
 pdf.parrafo(
     "El backend Flask actua como capa de abstraccion: el frontend solo conoce la API REST y no sabe "
-    "que hay dos bases de datos diferentes detras. Cada blueprint es responsable de comunicarse con "
-    "su motor correspondiente: posts_bp usa pymongo para MongoDB, mientras que auth_bp, profile_bp "
-    "y jobs_bp usan el SDK de Supabase para PostgreSQL."
+    "que hay cuatro bases de datos diferentes detras. Cada blueprint es responsable de comunicarse con "
+    "su motor correspondiente: posts_bp usa pymongo para MongoDB, auth_bp/profile_bp/jobs_bp/groups_bp "
+    "usan el SDK de Supabase para PostgreSQL, notifications_bp y messages_bp usaran Cassandra, y "
+    "connections_bp usara Neo4j."
 )
 
 # ── 8. Conclusion
@@ -495,15 +511,18 @@ pdf.bullet(
     "accesible mediante URI SRV, sin necesidad de infraestructura local."
 )
 pdf.bullet(
-    "Complementariedad con SQL: MongoDB no reemplaza a PostgreSQL sino que lo complementa, "
-    "cada motor se usa donde sus caracteristicas lo hacen mas adecuado."
+    "Complementariedad con los demas motores: MongoDB no reemplaza a PostgreSQL, Cassandra ni Neo4j "
+    "sino que se suma a ellos, asumiendo exclusivamente el rol del feed social donde sus caracteristicas "
+    "lo hacen mas adecuado."
 )
 pdf.ln(3)
 pdf.parrafo(
-    "El resultado es un sistema hibrido donde los datos transaccionales y relacionales (usuarios, "
-    "empleos, postulaciones) viven en PostgreSQL con todas sus garantias ACID, mientras que el "
-    "contenido social dinamico del feed (publicaciones, likes, comentarios) se gestiona en MongoDB "
-    "con la flexibilidad y escalabilidad que este tipo de datos requiere."
+    "El resultado es un sistema poliglota donde cada motor asume el dominio que mejor maneja: "
+    "PostgreSQL garantiza la integridad transaccional de usuarios, empleos y grupos; "
+    "MongoDB gestiona el contenido social dinamico del feed con flexibilidad de esquema y "
+    "alto rendimiento de escritura; Cassandra (a implementar) manejara el alto volumen de "
+    "notificaciones y mensajes con escrituras distribuidas; y Neo4j (a implementar) modelara "
+    "las conexiones entre usuarios como un grafo para calcular redes de contacto y matching."
 )
 
 out = r"c:\Users\maria\Desktop\tpoLinkedin\TPO-Linkedin\docs\mongo-justificacion.pdf"

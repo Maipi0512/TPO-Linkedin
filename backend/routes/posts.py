@@ -2,6 +2,8 @@ from datetime import datetime, timezone
 from bson import ObjectId
 from flask import Blueprint, request, jsonify
 from db_mongo import get_db
+from db import supabase_admin
+from routes.notifications import create_notification
 
 posts_bp = Blueprint("posts", __name__, url_prefix="/posts")
 
@@ -66,9 +68,24 @@ def list_posts():
 
     docs = list(db.posts.aggregate(pipeline))
 
+    # Hidratación: obtener datos actualizados de autores desde Supabase
+    author_ids = list({doc["user_id"] for doc in docs if doc.get("user_id")})
+    authors = {}
+    if author_ids:
+        res = supabase_admin.table("users").select(
+            "user_id, name, surname, profile_photo_url"
+        ).in_("user_id", author_ids).execute()
+        authors = {u["user_id"]: u for u in (res.data or [])}
+
     result = []
     for doc in docs:
         doc = serialize_post(doc)
+        # Aplicar datos actualizados del autor
+        author = authors.get(doc.get("user_id"), {})
+        if author:
+            doc["author_name"] = author.get("name", doc.get("author_name", ""))
+            doc["author_surname"] = author.get("surname", doc.get("author_surname", ""))
+            doc["author_photo_url"] = author.get("profile_photo_url", doc.get("author_photo_url"))
         comments = []
         for c in doc.pop("comments_list", []):
             c = dict(c)
@@ -165,6 +182,18 @@ def toggle_like(post_id):
         user_liked = True
 
     likes_count = db.likes.count_documents({"post_id": oid})
+
+    # Notificar al autor del post cuando alguien da like (no notificar el propio like)
+    if user_liked:
+        post = db.posts.find_one({"_id": oid}, {"user_id": 1, "author_name": 1})
+        if post and post["user_id"] != user_id:
+            liker_name = data.get("author_name", "Alguien")
+            create_notification(
+                post["user_id"], "like",
+                f"{liker_name} le dio Me gusta a tu publicación.",
+                ref_id=post_id
+            )
+
     return jsonify({"likes_count": likes_count, "user_liked": user_liked}), 200
 
 
@@ -210,6 +239,17 @@ def add_comment(post_id):
     comment["post_id"] = post_id
     comment["created_at"] = now.isoformat()
     comments_count = db.comments.count_documents({"post_id": oid})
+
+    # Notificar al autor del post cuando alguien comenta
+    post = db.posts.find_one({"_id": oid}, {"user_id": 1})
+    if post and post["user_id"] != user_id:
+        commenter_name = data.get("author_name", "Alguien")
+        create_notification(
+            post["user_id"], "comment",
+            f"{commenter_name} comentó tu publicación.",
+            ref_id=post_id
+        )
+
     return jsonify({"comment": comment, "comments_count": comments_count}), 201
 
 
@@ -224,6 +264,11 @@ def delete_comment(post_id, comment_id):
         return jsonify({"error": "ID inválido."}), 400
 
     db = get_db()
-    db.comments.delete_one({"_id": comment_oid, "user_id": user_id})
+    comment = db.comments.find_one({"_id": comment_oid})
+    if not comment:
+        return jsonify({"error": "Comentario no encontrado."}), 404
+    if comment["user_id"] != user_id:
+        return jsonify({"error": "No tenés permiso para eliminar este comentario."}), 403
+    db.comments.delete_one({"_id": comment_oid})
     comments_count = db.comments.count_documents({"post_id": post_oid})
     return jsonify({"ok": True, "comments_count": comments_count}), 200

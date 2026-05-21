@@ -56,3 +56,5 @@ def _init_collections(db):
         name="idx_comments_post_date"
     )
     db.comments.create_index([("user_id", ASCENDING)], name="idx_comments_user")
+
+    # notifications → Cassandra (pendiente)

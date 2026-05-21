@@ -1,6 +1,7 @@
 import uuid
 from flask import Blueprint, request, jsonify
 from db import supabase_admin
+from routes.notifications import create_notification
 
 jobs_bp = Blueprint("jobs", __name__, url_prefix="/jobs")
 
@@ -32,8 +33,10 @@ def create_job():
         "title": title,
         "description": data.get("description") or "",
         "location": data.get("location") or None,
+        "working_hours": int(data["working_hours"]) if data.get("working_hours") else None,
         "shift": data.get("shift") or "full-time",
         "modality": data.get("modality") or "presencial",
+        "employment_type": data.get("employment_type") or "full-time",
         "is_active": True,
     }
     res = supabase_admin.table("jobs").insert(entry).execute()
@@ -65,7 +68,13 @@ def create_job():
 @jobs_bp.route("/<job_id>", methods=["PUT"])
 def update_job(job_id):
     data = request.get_json()
-    allowed = ["title", "description", "location", "modality", "shift", "company_id", "is_active"]
+    user_id = data.get("user_id")
+    job = supabase_admin.table("jobs").select("poster_user_id").eq("job_id", job_id).limit(1).execute()
+    if not job.data:
+        return jsonify({"error": "Oferta no encontrada."}), 404
+    if job.data[0]["poster_user_id"] != user_id:
+        return jsonify({"error": "No tenés permiso para editar esta oferta."}), 403
+    allowed = ["title", "description", "location", "working_hours", "modality", "shift", "employment_type", "company_id", "is_active"]
     update = {k: v for k, v in data.items() if k in allowed}
     supabase_admin.table("jobs").update(update).eq("job_id", job_id).execute()
     return jsonify({"ok": True}), 200
@@ -73,6 +82,13 @@ def update_job(job_id):
 
 @jobs_bp.route("/<job_id>", methods=["DELETE"])
 def delete_job(job_id):
+    data = request.get_json() or {}
+    user_id = data.get("user_id")
+    job = supabase_admin.table("jobs").select("poster_user_id").eq("job_id", job_id).limit(1).execute()
+    if not job.data:
+        return jsonify({"error": "Oferta no encontrada."}), 404
+    if job.data[0]["poster_user_id"] != user_id:
+        return jsonify({"error": "No tenés permiso para eliminar esta oferta."}), 403
     supabase_admin.table("jobs").delete().eq("job_id", job_id).execute()
     return jsonify({"ok": True}), 200
 
@@ -87,6 +103,23 @@ def update_application(app_id):
     if status not in valid:
         return jsonify({"error": f"Estado inválido. Válidos: {valid}"}), 400
     supabase_admin.table("applications").update({"status": status}).eq("application_id", app_id).execute()
+
+    # Notificar al candidato del cambio de estado
+    app_res = supabase_admin.table("applications").select("user_id, job_id, jobs(title)").eq("application_id", app_id).limit(1).execute()
+    if app_res.data:
+        app_data = app_res.data[0]
+        job_title = (app_data.get("jobs") or {}).get("title", "la oferta")
+        status_labels = {
+            "in_review": "en revisión", "in_process": "en proceso",
+            "successful": "aceptada", "rejected": "rechazada"
+        }
+        label = status_labels.get(status, status)
+        create_notification(
+            app_data["user_id"], "application_update",
+            f"Tu postulación a '{job_title}' cambió a: {label}.",
+            ref_id=app_data["job_id"]
+        )
+
     return jsonify({"ok": True}), 200
 
 
