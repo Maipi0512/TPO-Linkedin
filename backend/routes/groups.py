@@ -1,8 +1,15 @@
 import uuid
+from datetime import datetime, timezone
 from flask import Blueprint, request, jsonify
 from db import supabase_admin
+from db_cassandra import get_collection, cassandra_available
+from routes.notifications import create_notification
 
 groups_bp = Blueprint("groups", __name__, url_prefix="/groups")
+
+
+def _group_msgs():
+    return get_collection("group_chat")
 
 
 @groups_bp.route("", methods=["GET"])
@@ -83,6 +90,20 @@ def join_group(group_id):
         "role": "member",
     }).execute()
 
+    # Notificar al admin del grupo
+    try:
+        grp = supabase_admin.table("groups").select("admin_id, name").eq("group_id", group_id).limit(1).execute()
+        usr = supabase_admin.table("users").select("name, surname").eq("user_id", user_id).limit(1).execute()
+        if grp.data and usr.data:
+            admin_id = grp.data[0]["admin_id"]
+            group_name = grp.data[0]["name"]
+            u = usr.data[0]
+            joiner = f"{u['name']} {u.get('surname') or ''}".strip()
+            create_notification(admin_id, "group_join",
+                                f"{joiner} se unió a tu grupo '{group_name}'.", ref_id=group_id)
+    except Exception as e:
+        print(f"[WARN] notif join_group: {e}")
+
     return jsonify({"ok": True}), 201
 
 
@@ -110,3 +131,103 @@ def user_groups(user_id):
         .execute()
     )
     return jsonify(res.data), 200
+
+
+@groups_bp.route("/<group_id>/members/<target_user_id>/promote", methods=["PUT"])
+def promote_member(group_id, target_user_id):
+    """El admin del grupo puede promover a otro miembro a admin."""
+    data = request.get_json() or {}
+    requester_id = data.get("user_id", "").strip()
+    if not requester_id:
+        return jsonify({"error": "user_id requerido."}), 400
+
+    group = supabase_admin.table("groups").select("admin_id, name").eq("group_id", group_id).limit(1).execute()
+    if not group.data:
+        return jsonify({"error": "Grupo no encontrado."}), 404
+
+    # Solo el admin_id original o miembros con rol admin pueden promover
+    grp = group.data[0]
+    req_member = supabase_admin.table("group_members").select("role").eq("group_id", group_id).eq("user_id", requester_id).limit(1).execute()
+    req_role = req_member.data[0]["role"] if req_member.data else None
+    if grp["admin_id"] != requester_id and req_role != "admin":
+        return jsonify({"error": "Solo un administrador puede promover miembros."}), 403
+
+    supabase_admin.table("group_members").update({"role": "admin"}).eq("group_id", group_id).eq("user_id", target_user_id).execute()
+
+    try:
+        usr = supabase_admin.table("users").select("name, surname").eq("user_id", target_user_id).limit(1).execute()
+        if usr.data:
+            u = usr.data[0]
+            create_notification(target_user_id, "group_promoted",
+                                f"Ahora sos administrador del grupo '{grp['name']}'.", ref_id=group_id)
+    except Exception as e:
+        print(f"[WARN] notif promote_member: {e}")
+
+    return jsonify({"ok": True}), 200
+
+
+@groups_bp.route("/<group_id>/messages", methods=["GET"])
+def get_group_messages(group_id):
+    """Devuelve los mensajes del grupo ordenados cronológicamente."""
+    if not cassandra_available():
+        return jsonify([]), 200
+    try:
+        try:
+            docs = list(_group_msgs().find({"group_id": group_id}, sort={"sent_at": 1}, limit=100))
+        except Exception:
+            docs = list(_group_msgs().find({"group_id": group_id}, limit=100))
+        for d in docs:
+            d["_id"] = str(d["_id"])
+        return jsonify(docs), 200
+    except Exception as e:
+        print(f"[WARN] get_group_messages: {e}")
+        return jsonify([]), 200
+
+
+@groups_bp.route("/<group_id>/messages", methods=["POST"])
+def send_group_message(group_id):
+    """Envía un mensaje al grupo."""
+    if not cassandra_available():
+        return jsonify({"error": "Mensajería no disponible"}), 503
+
+    data = request.get_json() or {}
+    user_id = (data.get("user_id") or "").strip()
+    body = (data.get("body") or "").strip()
+    if not user_id or not body:
+        return jsonify({"error": "user_id y body requeridos."}), 400
+
+    try:
+        usr = supabase_admin.table("users").select("name, surname, profile_photo_url").eq("user_id", user_id).limit(1).execute()
+        sender = usr.data[0] if usr.data else {}
+        sender_name = f"{sender.get('name', '')} {sender.get('surname') or ''}".strip()
+
+        now = datetime.now(timezone.utc).isoformat()
+        _group_msgs().insert_one({
+            "_id": str(uuid.uuid4()),
+            "group_id": group_id,
+            "sender_id": user_id,
+            "sender_name": sender_name,
+            "sender_photo": sender.get("profile_photo_url") or "",
+            "body": body,
+            "sent_at": now,
+        })
+    except Exception as e:
+        print(f"[ERROR] send_group_message: {e}")
+        return jsonify({"error": str(e)}), 500
+
+    # Notificar a los demás miembros del grupo
+    try:
+        grp = supabase_admin.table("groups").select("name").eq("group_id", group_id).limit(1).execute()
+        group_name = grp.data[0]["name"] if grp.data else "el grupo"
+        members = supabase_admin.table("group_members").select("user_id").eq("group_id", group_id).execute()
+        for m in (members.data or []):
+            if m["user_id"] != user_id:
+                create_notification(
+                    m["user_id"], "group_message",
+                    f"{sender_name} envió un mensaje en '{group_name}'.",
+                    ref_id=group_id
+                )
+    except Exception as e:
+        print(f"[WARN] notif send_group_message: {e}")
+
+    return jsonify({"ok": True}), 201

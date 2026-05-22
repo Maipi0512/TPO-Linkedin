@@ -6,3 +6,4 @@ python-dotenv==1.1.0
 pymongo[srv]==4.17.0
 psycopg2-binary==2.9.10
 neo4j==5.28.1
+astrapy==2.0.1

@@ -10,7 +10,7 @@ from datetime import datetime, timedelta, timezone
 from flask import Blueprint, request, jsonify
 from db import supabase, supabase_admin
 from db_mongo import get_db
-from routes.connections import create_user_node
+from routes.connections import create_user_node, delete_user_node
 
 auth_bp = Blueprint("auth", __name__, url_prefix="/auth")
 
@@ -113,6 +113,8 @@ def login():
         return jsonify({"error": "Email o contraseña incorrectos."}), 401
 
     roles = get_user_roles(user["user_id"])
+    # Sincronizar nodo Neo4j en cada login (crea si no existe, actualiza si cambió)
+    create_user_node(user["user_id"], user["name"], user.get("surname"), user.get("profile_photo_url"))
     return jsonify(build_user_response(user, roles)), 200
 
 
@@ -251,7 +253,10 @@ def delete_account(user_id):
     except Exception as e:
         print(f"[WARN] MongoDB delete user data: {e}")
 
-    # 7. Usuario
+    # 7. Nodo en Neo4j (con todas sus relaciones: CONNECTED_WITH, PENDING_REQUEST, HAS_SKILL)
+    delete_user_node(user_id)
+
+    # 8. Usuario
     supabase_admin.table("users").delete().eq("user_id", user_id).execute()
     return jsonify({"message": "Cuenta eliminada correctamente."}), 200
 

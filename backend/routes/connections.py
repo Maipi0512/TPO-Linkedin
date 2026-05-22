@@ -1,6 +1,7 @@
 from flask import Blueprint, request, jsonify
 from db_neo4j import get_driver, neo4j_available
 from db import supabase_admin
+from routes.notifications import create_notification
 
 connections_bp = Blueprint("connections", __name__, url_prefix="/connections")
 
@@ -108,6 +109,21 @@ def delete_job_node(job_id: str):
         print(f"[WARN] Neo4j delete_job_node: {e}")
 
 
+def delete_user_node(user_id: str):
+    """Elimina nodo :User y todas sus relaciones. Llamado al borrar cuenta."""
+    if not neo4j_available():
+        return
+    try:
+        driver = get_driver()
+        with driver.session() as session:
+            session.run(
+                "MATCH (u:User {user_id: $uid}) DETACH DELETE u",
+                uid=user_id
+            )
+    except Exception as e:
+        print(f"[WARN] Neo4j delete_user_node: {e}")
+
+
 # ─── Endpoints de la API ──────────────────────────────────────────────────────
 
 @connections_bp.route("/users", methods=["GET"])
@@ -185,7 +201,7 @@ def get_suggestions(user_id):
 
     with driver.session() as session:
         result = session.run(
-            "MATCH (u:User {user_id: $uid})-[:CONNECTED_WITH]->(:User)-[:CONNECTED_WITH]->(s:User) "
+            "MATCH (u:User {user_id: $uid})-[:CONNECTED_WITH*2..3]->(s:User) "
             "WHERE s.user_id <> $uid "
             "  AND NOT (u)-[:CONNECTED_WITH]->(s) "
             "  AND NOT (u)-[:PENDING_REQUEST]->(s) "
@@ -301,6 +317,18 @@ def send_request():
             "CREATE (a)-[:PENDING_REQUEST {created_at: datetime()}]->(b)",
             {"from": from_id, "to": to_id}
         )
+
+    # Notificar al destinatario
+    try:
+        res = supabase_admin.table("users").select("name, surname").eq("user_id", from_id).limit(1).execute()
+        if res.data:
+            u = res.data[0]
+            sender_name = f"{u['name']} {u.get('surname') or ''}".strip()
+            create_notification(to_id, "connection_request",
+                                f"{sender_name} te envió una solicitud de conexión.", ref_id=from_id)
+    except Exception as e:
+        print(f"[WARN] notif send_request: {e}")
+
     return jsonify({"ok": True}), 201
 
 
@@ -327,6 +355,18 @@ def accept_request():
         ).single()
     if not result:
         return jsonify({"error": "No existe esa solicitud pendiente."}), 404
+
+    # Notificar al que envió la solicitud que fue aceptado
+    try:
+        res = supabase_admin.table("users").select("name, surname").eq("user_id", to_id).limit(1).execute()
+        if res.data:
+            u = res.data[0]
+            acceptor_name = f"{u['name']} {u.get('surname') or ''}".strip()
+            create_notification(from_id, "connection_accepted",
+                                f"{acceptor_name} aceptó tu solicitud de conexión.", ref_id=to_id)
+    except Exception as e:
+        print(f"[WARN] notif accept_request: {e}")
+
     return jsonify({"ok": True}), 200
 
 
@@ -368,3 +408,25 @@ def remove_connection():
             {"uid": user_id, "oid": other_id}
         )
     return jsonify({"ok": True}), 200
+
+
+@connections_bp.route("/cleanup-orphaned-nodes", methods=["DELETE"])
+def cleanup_orphaned_nodes():
+    """Elimina nodos de Neo4j cuyos user_id ya no existen en Supabase."""
+    if not neo4j_available():
+        return jsonify({"ok": True, "deleted": 0}), 200
+
+    # Obtener todos los user_id válidos de Supabase
+    users_res = supabase_admin.table("users").select("user_id").execute()
+    valid_ids = {u["user_id"] for u in (users_res.data or [])}
+
+    driver = get_driver()
+    with driver.session() as session:
+        result = session.run("MATCH (u:User) RETURN u.user_id AS uid")
+        neo4j_ids = [r["uid"] for r in result]
+
+        orphaned = [uid for uid in neo4j_ids if uid and uid not in valid_ids]
+        for uid in orphaned:
+            session.run("MATCH (u:User {user_id: $uid}) DETACH DELETE u", uid=uid)
+
+    return jsonify({"ok": True, "deleted": len(orphaned), "orphaned_ids": orphaned}), 200

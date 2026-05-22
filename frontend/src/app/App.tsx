@@ -99,48 +99,27 @@ type UserGroup = {
   groups: Group;
 };
 
-const CONVERSATIONS = [
-  {
-    id: 1, name: "Matías Gómez", avatar: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=48&h=48&fit=crop&auto=format",
-    lastMessage: "Perfecto, hablamos el lunes entonces 👍", time: "10:42", unread: 0,
-    messages: [
-      { id: 1, from: "them", text: "Hola Valentina! Vi tu perfil y me parece muy interesante tu experiencia.", time: "lun 9:15", status: "read" },
-      { id: 2, from: "me", text: "¡Hola Matías! Muchas gracias, también veo que tienen proyectos muy interesantes en Globant.", time: "lun 9:45", status: "read" },
-      { id: 3, from: "them", text: "Exacto. Te quería comentar que tenemos una posición abierta que creo que te puede interesar.", time: "lun 10:00", status: "read" },
-      { id: 4, from: "me", text: "Me interesa mucho. ¿Podemos hablar esta semana?", time: "lun 10:20", status: "read" },
-      { id: 5, from: "them", text: "Perfecto, hablamos el lunes entonces 👍", time: "lun 10:42", status: "read" },
-    ],
-  },
-  {
-    id: 2, name: "Lucía Fernández", avatar: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=48&h=48&fit=crop&auto=format",
-    lastMessage: "¿Viste el artículo de Nielsen Norman?", time: "ayer", unread: 2,
-    messages: [
-      { id: 1, from: "them", text: "Val! ¿Cómo estás? Hace tiempo que no hablamos.", time: "ayer 14:00", status: "read" },
-      { id: 2, from: "me", text: "¡Lucía! Todo bien, bastante ocupada con el nuevo proyecto. Vos?", time: "ayer 14:30", status: "read" },
-      { id: 3, from: "them", text: "¿Viste el artículo de Nielsen Norman?", time: "ayer 18:00", status: "sent" },
-    ],
-  },
-  {
-    id: 3, name: "Grupo: Tech BuenosAires", avatar: "https://images.unsplash.com/photo-1522071820081-009f0129c71c?w=48&h=48&fit=crop&auto=format",
-    lastMessage: "Diego: ¿Alguien va al meetup de Vue?", time: "mar", unread: 5,
-    messages: [
-      { id: 1, from: "other", sender: "Ana", text: "Buenas! Alguien tiene info del próximo hackathon?", time: "mar 11:00", status: "read" },
-      { id: 2, from: "other", sender: "Facundo", text: "Creo que es el 15. Lo busco y lo comparto.", time: "mar 11:15", status: "read" },
-      { id: 3, from: "other", sender: "Diego", text: "¿Alguien va al meetup de Vue?", time: "mar 16:00", status: "sent" },
-    ],
-  },
-];
 
 // ─── Sidebar ────────────────────────────────────────────────────────────────
 function Sidebar({ page, setPage, onLogout, user }: { page: Page; setPage: (p: Page) => void; onLogout: () => void; user: UserSession | null }) {
   const [unreadNotifs, setUnreadNotifs] = useState(0);
+  const [unreadMsgs, setUnreadMsgs] = useState(0);
 
   useEffect(() => {
     if (!user) return;
-    fetch(`${API_URL}/notifications/${user.user_id}/unread-count`)
-      .then((r) => r.ok ? r.json() : { unread: 0 })
-      .then((data) => setUnreadNotifs(data.unread ?? 0))
-      .catch(() => {});
+    const fetchCounts = () => {
+      fetch(`${API_URL}/notifications/${user.user_id}/unread-count`)
+        .then((r) => r.ok ? r.json() : { unread: 0 })
+        .then((data) => setUnreadNotifs(data.unread ?? 0))
+        .catch(() => {});
+      fetch(`${API_URL}/messages/${user.user_id}/unread-count`)
+        .then((r) => r.ok ? r.json() : { unread: 0 })
+        .then((data) => setUnreadMsgs(data.unread ?? 0))
+        .catch(() => {});
+    };
+    fetchCounts();
+    const interval = setInterval(fetchCounts, 15000);
+    return () => clearInterval(interval);
   }, [user?.user_id, page]);
 
   const navItems = [
@@ -148,7 +127,7 @@ function Sidebar({ page, setPage, onLogout, user }: { page: Page; setPage: (p: P
     { id: "network" as Page, icon: Users, label: "Mi Red" },
     { id: "jobs" as Page, icon: Briefcase, label: "Empleos" },
     { id: "groups" as Page, icon: UsersRound, label: "Grupos" },
-    { id: "messages" as Page, icon: MessageSquare, label: "Mensajes", badge: 7 },
+    { id: "messages" as Page, icon: MessageSquare, label: "Mensajes", badge: unreadMsgs > 0 ? unreadMsgs : undefined },
     { id: "notifications" as Page, icon: Bell, label: "Notificaciones", badge: unreadNotifs > 0 ? unreadNotifs : undefined },
     { id: "profile" as Page, icon: User, label: "Mi Perfil" },
   ];
@@ -1543,6 +1522,9 @@ function JobsPage({ user, pendingJobId, onClearPendingJob }: { user: UserSession
   const [profile, setProfile] = useState<FullProfile | null>(null);
   const [expandedAppId, setExpandedAppId] = useState<string | null>(null);
   const [appHistories, setAppHistories] = useState<Record<string, AppHistoryEntry[]>>({});
+  const [editingJob, setEditingJob] = useState<Job | null>(null);
+  const [editJobForm, setEditJobForm] = useState({ title: "", description: "", location: "", modality: "hibrido", shift: "full-time", employment_type: "full-time" });
+  const [savingJob, setSavingJob] = useState(false);
 
   const isCandidate = user.roles.includes("candidato");
   const isPoster = user.roles.includes("poster");
@@ -1688,9 +1670,29 @@ function JobsPage({ user, pendingJobId, onClearPendingJob }: { user: UserSession
     await loadJobs();
   };
 
+  const startEditJob = (e: React.MouseEvent, job: Job) => {
+    e.stopPropagation();
+    setEditingJob(job);
+    setEditJobForm({ title: job.title, description: job.description ?? "", location: job.location ?? "", modality: job.modality, shift: job.shift, employment_type: (job as any).employment_type ?? "full-time" });
+  };
+
+  const saveEditJob = async () => {
+    if (!editingJob) return;
+    setSavingJob(true);
+    await fetch(`${API_URL}/jobs/${editingJob.job_id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ user_id: user.user_id, ...editJobForm }),
+    });
+    setSavingJob(false);
+    setEditingJob(null);
+    await loadPostedJobs();
+    await loadJobs();
+  };
+
   const filtered = jobs.filter((j) => {
     const q = search.toLowerCase();
-    const matchSearch = j.title.toLowerCase().includes(q) || (j.companies?.name ?? "").toLowerCase().includes(q) || (j.location ?? "").toLowerCase().includes(q);
+    const matchSearch = j.title.toLowerCase().includes(q) || (j.companies?.name ?? "").toLowerCase().includes(q) || (j.location ?? "").toLowerCase().includes(q) || j.job_skill.some((s) => s.skills.name.toLowerCase().includes(q));
     const matchFilter = filter === "all" || (filter === "remote" && j.modality === "remoto");
     return matchSearch && matchFilter;
   });
@@ -1974,24 +1976,53 @@ function JobsPage({ user, pendingJobId, onClearPendingJob }: { user: UserSession
               : (
                 <div className="space-y-3">
                   {postedJobs.map((job) => (
-                    <div key={job.job_id} onClick={() => { setPostedSelected(job); loadApplicants(job.job_id); }} className={`p-4 rounded-xl border cursor-pointer transition-all hover:shadow-sm ${postedSelected?.job_id === job.job_id ? "border-primary bg-primary/5" : "border-border"}`}>
-                      <div className="flex items-center justify-between gap-2">
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2">
-                            <p className="font-semibold text-sm text-foreground truncate">{job.title}</p>
-                            <span className={`text-xs px-2 py-0.5 rounded-full font-medium shrink-0 ${job.is_active ? "bg-green-100 text-green-700" : "bg-muted text-muted-foreground"}`}>
-                              {job.is_active ? "Activo" : "Inactivo"}
-                            </span>
+                    <div key={job.job_id}>
+                      <div onClick={() => { if (editingJob?.job_id !== job.job_id) { setPostedSelected(job); loadApplicants(job.job_id); } }} className={`p-4 rounded-xl border cursor-pointer transition-all hover:shadow-sm ${postedSelected?.job_id === job.job_id ? "border-primary bg-primary/5" : "border-border"}`}>
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2">
+                              <p className="font-semibold text-sm text-foreground truncate">{job.title}</p>
+                              <span className={`text-xs px-2 py-0.5 rounded-full font-medium shrink-0 ${job.is_active ? "bg-green-100 text-green-700" : "bg-muted text-muted-foreground"}`}>
+                                {job.is_active ? "Activo" : "Inactivo"}
+                              </span>
+                            </div>
+                            <p className="text-xs text-muted-foreground mt-0.5">{job.location ?? "Sin ubicación"} · {job.modality} · {job.shift}</p>
                           </div>
-                          <p className="text-xs text-muted-foreground mt-0.5">{job.location ?? "Sin ubicación"} · {job.modality} · {job.shift}</p>
-                        </div>
-                        <div className="flex items-center gap-1 shrink-0">
-                          <button onClick={(e) => { e.stopPropagation(); toggleJobActive(job); }} className="text-xs border border-border rounded-lg px-2 py-1 hover:bg-muted transition-colors text-muted-foreground">
-                            {job.is_active ? "Desactivar" : "Activar"}
-                          </button>
-                          <button onClick={(e) => { e.stopPropagation(); deleteJob(job.job_id); }} className="text-muted-foreground hover:text-destructive transition-colors p-1.5"><Trash2 size={14} /></button>
+                          <div className="flex items-center gap-1 shrink-0">
+                            <button onClick={(e) => startEditJob(e, job)} className="text-muted-foreground hover:text-primary transition-colors p-1.5" title="Editar oferta"><Edit3 size={14} /></button>
+                            <button onClick={(e) => { e.stopPropagation(); toggleJobActive(job); }} className="text-xs border border-border rounded-lg px-2 py-1 hover:bg-muted transition-colors text-muted-foreground">
+                              {job.is_active ? "Desactivar" : "Activar"}
+                            </button>
+                            <button onClick={(e) => { e.stopPropagation(); deleteJob(job.job_id); }} className="text-muted-foreground hover:text-destructive transition-colors p-1.5"><Trash2 size={14} /></button>
+                          </div>
                         </div>
                       </div>
+                      {editingJob?.job_id === job.job_id && (
+                        <div className="mt-1 p-4 bg-muted rounded-xl border border-primary/30 space-y-3" onClick={(e) => e.stopPropagation()}>
+                          <p className="text-xs font-semibold text-foreground">Editar oferta</p>
+                          <div><label className={labelCls}>Título *</label><input className={inputCls} value={editJobForm.title} onChange={(e) => setEditJobForm({ ...editJobForm, title: e.target.value })} /></div>
+                          <div><label className={labelCls}>Descripción</label><textarea rows={2} className={inputCls + " resize-none"} value={editJobForm.description} onChange={(e) => setEditJobForm({ ...editJobForm, description: e.target.value })} /></div>
+                          <div className="grid grid-cols-3 gap-2">
+                            <div><label className={labelCls}>Ubicación</label><input className={inputCls} value={editJobForm.location} onChange={(e) => setEditJobForm({ ...editJobForm, location: e.target.value })} /></div>
+                            <div>
+                              <label className={labelCls}>Modalidad</label>
+                              <select className={inputCls} value={editJobForm.modality} onChange={(e) => setEditJobForm({ ...editJobForm, modality: e.target.value })}>
+                                {["remoto", "hibrido", "presencial"].map((m) => <option key={m}>{m}</option>)}
+                              </select>
+                            </div>
+                            <div>
+                              <label className={labelCls}>Turno</label>
+                              <select className={inputCls} value={editJobForm.shift} onChange={(e) => setEditJobForm({ ...editJobForm, shift: e.target.value })}>
+                                {["full-time", "part-time", "freelance"].map((t) => <option key={t}>{t}</option>)}
+                              </select>
+                            </div>
+                          </div>
+                          <div className="flex gap-2 justify-end">
+                            <button onClick={() => setEditingJob(null)} className="text-sm text-muted-foreground px-3 py-1.5 rounded-lg hover:bg-border transition-colors">Cancelar</button>
+                            <button onClick={saveEditJob} disabled={savingJob || !editJobForm.title.trim()} className="text-sm bg-primary text-primary-foreground px-4 py-1.5 rounded-lg hover:opacity-90 disabled:opacity-60 transition-opacity">{savingJob ? "Guardando..." : "Guardar cambios"}</button>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   ))}
                 </div>
@@ -2037,24 +2068,169 @@ function JobsPage({ user, pendingJobId, onClearPendingJob }: { user: UserSession
 }
 
 // ─── Messages Page ────────────────────────────────────────────────────────────
-function MessagesPage() {
-  const [selected, setSelected] = useState(CONVERSATIONS[0]);
+type Conversation = {
+  conversation_id: string;
+  other_user_id: string;
+  other_name: string;
+  other_photo: string | null;
+  last_message: string;
+  last_sent_at: string;
+};
+type ChatMessage = {
+  _id: string;
+  conversation_id: string;
+  sender_id: string;
+  receiver_id: string;
+  body: string;
+  sent_at: string;
+  is_read: boolean;
+  edited?: boolean;
+};
+
+function MessagesPage({ user }: { user: UserSession }) {
+  const [convos, setConvos] = useState<Conversation[]>([]);
+  const [selected, setSelected] = useState<Conversation | null>(null);
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [text, setText] = useState("");
-  const [convos, setConvos] = useState(CONVERSATIONS);
+  const [sending, setSending] = useState(false);
+  const [search, setSearch] = useState("");
+  const [allUsers, setAllUsers] = useState<Neo4jUser[]>([]);
+  const [editingMsgId, setEditingMsgId] = useState<string | null>(null);
+  const [editingBody, setEditingBody] = useState("");
+  const [showNewChat, setShowNewChat] = useState(false);
+  const [userGroups, setUserGroups] = useState<UserGroup[]>([]);
+  const [selectedGroup, setSelectedGroup] = useState<Group | null>(null);
+  const [groupMessages, setGroupMessages] = useState<GroupMessage[]>([]);
+  const [groupMsgText, setGroupMsgText] = useState("");
+  const [sendingGroupMsg, setSendingGroupMsg] = useState(false);
+  const [groupMsgError, setGroupMsgError] = useState("");
   const bottomRef = useRef<HTMLDivElement>(null);
+  const groupBottomRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: "smooth" }); }, [selected]);
-
-  const sendMessage = () => {
-    if (!text.trim()) return;
-    setConvos((prev) => prev.map((c) =>
-      c.id === selected.id
-        ? { ...c, messages: [...c.messages, { id: Date.now(), from: "me", text, time: "ahora", status: "sent" }], lastMessage: text }
-        : c
-    ));
-    setSelected((s) => ({ ...s, messages: [...s.messages, { id: Date.now(), from: "me", text, time: "ahora", status: "sent" }] }));
-    setText("");
+  const loadConvos = async () => {
+    const res = await fetch(`${API_URL}/messages/${user.user_id}/conversations`);
+    if (res.ok) setConvos(await res.json());
   };
+
+  const loadMessages = async (convo_id: string) => {
+    const res = await fetch(`${API_URL}/messages/conversation/${convo_id}`);
+    if (res.ok) setMessages(await res.json());
+    fetch(`${API_URL}/messages/conversation/${convo_id}/read`, {
+      method: "PUT", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ user_id: user.user_id }),
+    });
+  };
+
+  const loadGroupMessages = async (group_id: string) => {
+    const res = await fetch(`${API_URL}/groups/${group_id}/messages`);
+    if (res.ok) setGroupMessages(await res.json());
+  };
+
+  const sendGroupMessage = async () => {
+    if (!groupMsgText.trim() || !selectedGroup || sendingGroupMsg) return;
+    setSendingGroupMsg(true);
+    setGroupMsgError("");
+    try {
+      const res = await fetch(`${API_URL}/groups/${selectedGroup.group_id}/messages`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ user_id: user.user_id, body: groupMsgText.trim() }),
+      });
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}));
+        setGroupMsgError(d.error || `Error ${res.status}`);
+        return;
+      }
+      setGroupMsgText("");
+      await loadGroupMessages(selectedGroup.group_id);
+    } catch {
+      setGroupMsgError("No se pudo conectar con el servidor.");
+    } finally {
+      setSendingGroupMsg(false);
+    }
+  };
+
+  const selectGroupChat = (g: Group) => {
+    setSelectedGroup(g);
+    setSelected(null);
+    setMessages([]);
+    setGroupMessages([]);
+    setShowNewChat(false);
+  };
+
+  useEffect(() => {
+    loadConvos();
+    fetch(`${API_URL}/connections/${user.user_id}`)
+      .then((r) => r.ok ? r.json() : []).then(setAllUsers);
+    fetch(`${API_URL}/groups/user/${user.user_id}`)
+      .then((r) => r.ok ? r.json() : []).then(setUserGroups);
+    const interval = setInterval(loadConvos, 10000);
+    return () => clearInterval(interval);
+  }, [user.user_id]);
+
+  useEffect(() => {
+    if (!selectedGroup) return;
+    loadGroupMessages(selectedGroup.group_id);
+    const interval = setInterval(() => loadGroupMessages(selectedGroup.group_id), 5000);
+    return () => clearInterval(interval);
+  }, [selectedGroup?.group_id]);
+
+  useEffect(() => { groupBottomRef.current?.scrollIntoView({ behavior: "smooth" }); }, [groupMessages]);
+
+  useEffect(() => {
+    if (!selected) return;
+    loadMessages(selected.conversation_id);
+    const interval = setInterval(() => loadMessages(selected.conversation_id), 5000);
+    return () => clearInterval(interval);
+  }, [selected?.conversation_id]);
+
+  useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages]);
+
+  const selectConvo = (c: Conversation) => { setSelected(c); setShowNewChat(false); };
+
+  const startChat = (u: Neo4jUser) => {
+    const existing = convos.find((c) => c.other_user_id === u.user_id);
+    if (existing) { selectConvo(existing); return; }
+    const fake: Conversation = {
+      conversation_id: [user.user_id, u.user_id].sort().join("_"),
+      other_user_id: u.user_id,
+      other_name: `${u.name} ${u.surname || ""}`.trim(),
+      other_photo: u.photo_url || null,
+      last_message: "",
+      last_sent_at: "",
+    };
+    setSelected(fake);
+    setMessages([]);
+    setShowNewChat(false);
+  };
+
+  const sendMessage = async () => {
+    if (!text.trim() || !selected || sending) return;
+    setSending(true);
+    const res = await fetch(`${API_URL}/messages/send`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ from_user_id: user.user_id, to_user_id: selected.other_user_id, body: text.trim() }),
+    });
+    if (res.ok) {
+      setText("");
+      await loadMessages(selected.conversation_id);
+      await loadConvos();
+    }
+    setSending(false);
+  };
+
+  const saveEdit = async (msgId: string) => {
+    if (!editingBody.trim()) return;
+    await fetch(`${API_URL}/messages/message/${msgId}/edit`, {
+      method: "PUT", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ user_id: user.user_id, body: editingBody.trim() }),
+    });
+    setEditingMsgId(null);
+    if (selected) await loadMessages(selected.conversation_id);
+  };
+
+  const filteredUsers = allUsers.filter((u) =>
+    `${u.name} ${u.surname}`.toLowerCase().includes(search.toLowerCase())
+  );
 
   return (
     <div className="max-w-4xl mx-auto py-8 px-4 h-[calc(100vh-4rem)]">
@@ -2062,80 +2238,221 @@ function MessagesPage() {
         {/* Sidebar */}
         <div className="w-64 border-r border-border flex flex-col shrink-0">
           <div className="p-4 border-b border-border">
-            <p className="font-semibold text-foreground mb-3">Mensajes</p>
-            <div className="relative">
-              <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
-              <input placeholder="Buscar..." className="w-full bg-input-background rounded-xl pl-8 pr-3 py-2 text-xs outline-none focus:ring-2 focus:ring-primary/20 transition" />
+            <div className="flex items-center justify-between mb-3">
+              <p className="font-semibold text-foreground">Mensajes</p>
+              <button onClick={() => setShowNewChat(!showNewChat)} className="text-primary hover:opacity-80 transition-opacity" title="Nuevo mensaje">
+                <Plus size={18} />
+              </button>
             </div>
+            {showNewChat && (
+              <input
+                autoFocus
+                placeholder="Buscar usuario..."
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="w-full bg-input-background rounded-xl px-3 py-2 text-xs outline-none focus:ring-2 focus:ring-primary/20 transition"
+              />
+            )}
           </div>
+
           <div className="overflow-y-auto flex-1">
-            {convos.map((c) => (
-              <div
-                key={c.id}
-                onClick={() => setSelected(c)}
-                className={`flex items-center gap-3 px-4 py-3 cursor-pointer transition-colors hover:bg-muted ${selected.id === c.id ? "bg-muted" : ""}`}
-              >
-                <div className="relative shrink-0">
-                  <img src={c.avatar} alt={c.name} className="w-10 h-10 rounded-full object-cover" />
-                  {c.unread > 0 && (
-                    <span className="absolute -top-0.5 -right-0.5 w-4 h-4 bg-primary text-primary-foreground text-xs rounded-full flex items-center justify-center leading-none">{c.unread}</span>
-                  )}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-semibold text-foreground truncate">{c.name}</p>
-                  <p className="text-xs text-muted-foreground truncate">{c.lastMessage}</p>
-                </div>
-                <p className="text-xs text-muted-foreground shrink-0">{c.time}</p>
-              </div>
-            ))}
+            {showNewChat ? (
+              filteredUsers.length === 0
+                ? <p className="text-xs text-muted-foreground text-center py-6">Sin usuarios encontrados.</p>
+                : filteredUsers.map((u) => (
+                  <div key={u.user_id} onClick={() => startChat(u)} className="flex items-center gap-3 px-4 py-3 cursor-pointer hover:bg-muted transition-colors">
+                    {u.photo_url
+                      ? <img src={u.photo_url} alt={u.name} className="w-9 h-9 rounded-full object-cover shrink-0" />
+                      : <div className="w-9 h-9 rounded-full bg-primary/20 flex items-center justify-center text-primary font-bold text-sm shrink-0">{u.name[0]}</div>
+                    }
+                    <p className="text-sm font-medium text-foreground truncate">{u.name} {u.surname}</p>
+                  </div>
+                ))
+            ) : (
+              <>
+                {convos.length === 0 && userGroups.length === 0 ? (
+                  <div className="p-6 text-center">
+                    <MessageSquare size={28} className="text-muted-foreground mx-auto mb-2" />
+                    <p className="text-xs text-muted-foreground">Todavía no tenés mensajes.<br />Presioná + para iniciar uno.</p>
+                  </div>
+                ) : (
+                  <>
+                    {convos.map((c) => (
+                      <div key={c.conversation_id} onClick={() => { selectConvo(c); setSelectedGroup(null); }}
+                        className={`flex items-center gap-3 px-4 py-3 cursor-pointer transition-colors hover:bg-muted ${selected?.conversation_id === c.conversation_id ? "bg-muted" : ""}`}
+                      >
+                        {c.other_photo
+                          ? <img src={c.other_photo} alt={c.other_name} className="w-10 h-10 rounded-full object-cover shrink-0" />
+                          : <div className="w-10 h-10 rounded-full bg-primary/20 flex items-center justify-center text-primary font-bold text-sm shrink-0">{c.other_name[0]}</div>
+                        }
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-semibold text-foreground truncate">{c.other_name}</p>
+                          <p className="text-xs text-muted-foreground truncate">{c.last_message || "Sin mensajes aún"}</p>
+                        </div>
+                        {c.last_sent_at && <p className="text-xs text-muted-foreground shrink-0">{c.last_sent_at.slice(11, 16)}</p>}
+                      </div>
+                    ))}
+                    {userGroups.length > 0 && (
+                      <>
+                        <div className="px-4 py-2 border-t border-border mt-1">
+                          <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Grupos</p>
+                        </div>
+                        {userGroups.map(({ groups: g }) => (
+                          <div key={g.group_id} onClick={() => selectGroupChat(g)}
+                            className={`flex items-center gap-3 px-4 py-3 cursor-pointer transition-colors hover:bg-muted ${selectedGroup?.group_id === g.group_id ? "bg-muted" : ""}`}
+                          >
+                            <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
+                              <UsersRound size={18} className="text-primary" />
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <p className="text-sm font-semibold text-foreground truncate">{g.name}</p>
+                              <p className="text-xs text-muted-foreground">Grupo</p>
+                            </div>
+                          </div>
+                        ))}
+                      </>
+                    )}
+                  </>
+                )}
+              </>
+            )}
           </div>
         </div>
 
         {/* Chat */}
-        <div className="flex-1 flex flex-col">
-          <div className="px-5 py-3.5 border-b border-border flex items-center gap-3">
-            <img src={selected.avatar} alt={selected.name} className="w-9 h-9 rounded-full object-cover" />
-            <p className="font-semibold text-foreground text-sm">{selected.name}</p>
+        {!selected && !selectedGroup ? (
+          <div className="flex-1 flex flex-col items-center justify-center gap-3">
+            <MessageSquare size={40} className="text-muted-foreground" />
+            <p className="text-sm text-muted-foreground">Seleccioná una conversación o iniciá una nueva.</p>
           </div>
-
-          <div className="flex-1 overflow-y-auto p-4 space-y-3">
-            {selected.messages.map((msg) => (
-              <div key={msg.id} className={`flex ${msg.from === "me" ? "justify-end" : "justify-start"}`}>
-                <div className={`max-w-xs rounded-2xl px-4 py-2.5 text-sm ${
-                  msg.from === "me"
-                    ? "bg-primary text-primary-foreground rounded-br-sm"
-                    : "bg-muted text-foreground rounded-bl-sm"
-                }`}>
-                  {"sender" in msg && msg.sender && <p className="text-xs font-semibold mb-1 opacity-70">{msg.sender}</p>}
-                  <p className="leading-relaxed">{msg.text}</p>
-                  <div className="flex items-center justify-end gap-1 mt-1">
-                    <span className={`text-xs ${msg.from === "me" ? "text-primary-foreground/60" : "text-muted-foreground"}`}>{msg.time}</span>
-                    {msg.from === "me" && (msg.status === "read" ? <CheckCheck size={12} className="text-primary-foreground/60" /> : <Check size={12} className="text-primary-foreground/60" />)}
-                  </div>
-                </div>
+        ) : selectedGroup ? (
+          <div className="flex-1 flex flex-col">
+            <div className="px-5 py-3.5 border-b border-border flex items-center gap-3">
+              <div className="w-9 h-9 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
+                <UsersRound size={16} className="text-primary" />
               </div>
-            ))}
-            <div ref={bottomRef} />
+              <div>
+                <p className="font-semibold text-foreground text-sm">{selectedGroup.name}</p>
+                <p className="text-xs text-muted-foreground">Grupo</p>
+              </div>
+            </div>
+            <div className="flex-1 overflow-y-auto p-4 space-y-3">
+              {groupMessages.length === 0 && (
+                <p className="text-xs text-muted-foreground text-center py-8">Nadie escribió aún. ¡Sé el primero!</p>
+              )}
+              {groupMessages.map((msg) => {
+                const isMe = msg.sender_id === user.user_id;
+                return (
+                  <div key={msg._id} className={`flex gap-2 ${isMe ? "justify-end" : "justify-start"}`}>
+                    {!isMe && (
+                      msg.sender_photo
+                        ? <img src={msg.sender_photo} alt={msg.sender_name} className="w-8 h-8 rounded-full object-cover shrink-0 mt-0.5" />
+                        : <div className="w-8 h-8 rounded-full bg-primary/20 flex items-center justify-center text-primary font-bold text-xs shrink-0 mt-0.5">{msg.sender_name[0]}</div>
+                    )}
+                    <div className={`max-w-xs rounded-2xl px-4 py-2.5 text-sm ${isMe ? "bg-primary text-primary-foreground rounded-br-sm" : "bg-muted text-foreground rounded-bl-sm"}`}>
+                      {!isMe && <p className="text-xs font-semibold text-primary mb-1">{msg.sender_name}</p>}
+                      <p className="leading-relaxed">{msg.body}</p>
+                      <p className={`text-xs mt-1 text-right ${isMe ? "text-primary-foreground/60" : "text-muted-foreground"}`}>{msg.sent_at.slice(11, 16)}</p>
+                    </div>
+                  </div>
+                );
+              })}
+              <div ref={groupBottomRef} />
+            </div>
+            <div className="p-4 border-t border-border space-y-2">
+              {groupMsgError && (
+                <p className="text-xs text-destructive bg-destructive/10 px-3 py-1.5 rounded-lg">{groupMsgError}</p>
+              )}
+              <div className="flex items-center gap-3">
+                <input
+                  value={groupMsgText}
+                  onChange={(e) => { setGroupMsgText(e.target.value); setGroupMsgError(""); }}
+                  onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && sendGroupMessage()}
+                  placeholder={`Escribir en ${selectedGroup.name}...`}
+                  className="flex-1 bg-input-background rounded-xl px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-primary/20 transition"
+                />
+                <button onClick={sendGroupMessage} disabled={!groupMsgText.trim() || sendingGroupMsg}
+                  className="bg-primary text-primary-foreground p-2.5 rounded-xl disabled:opacity-40 hover:opacity-90 transition-opacity">
+                  <Send size={16} />
+                </button>
+              </div>
+            </div>
           </div>
+        ) : (
+          <div className="flex-1 flex flex-col">
+            <div className="px-5 py-3.5 border-b border-border flex items-center gap-3">
+              {selected!.other_photo
+                ? <img src={selected!.other_photo} alt={selected!.other_name} className="w-9 h-9 rounded-full object-cover" />
+                : <div className="w-9 h-9 rounded-full bg-primary/20 flex items-center justify-center text-primary font-bold text-sm">{selected!.other_name[0]}</div>
+              }
+              <p className="font-semibold text-foreground text-sm">{selected!.other_name}</p>
+            </div>
 
-          <div className="p-4 border-t border-border flex items-center gap-3">
-            <button className="text-muted-foreground hover:text-foreground transition-colors p-2"><Paperclip size={17} /></button>
-            <input
-              value={text}
-              onChange={(e) => setText(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && sendMessage()}
-              placeholder="Escribir mensaje..."
-              className="flex-1 bg-input-background rounded-xl px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-primary/20 transition"
-            />
-            <button
-              onClick={sendMessage}
-              disabled={!text.trim()}
-              className="bg-primary text-primary-foreground p-2.5 rounded-xl disabled:opacity-40 hover:opacity-90 transition-opacity"
-            >
-              <Send size={16} />
-            </button>
+            <div className="flex-1 overflow-y-auto p-4 space-y-3">
+              {messages.length === 0 && (
+                <p className="text-xs text-muted-foreground text-center py-8">Empezá la conversación enviando un mensaje.</p>
+              )}
+              {messages.map((msg) => {
+                const isMe = msg.sender_id === user.user_id;
+                const isEditing = editingMsgId === msg._id;
+                return (
+                  <div key={msg._id} className={`flex ${isMe ? "justify-end" : "justify-start"} group`}>
+                    <div className={`max-w-xs rounded-2xl px-4 py-2.5 text-sm ${isMe ? "bg-primary text-primary-foreground rounded-br-sm" : "bg-muted text-foreground rounded-bl-sm"}`}>
+                      {isEditing ? (
+                        <div className="space-y-1.5">
+                          <input
+                            autoFocus
+                            value={editingBody}
+                            onChange={(e) => setEditingBody(e.target.value)}
+                            onKeyDown={(e) => { if (e.key === "Enter") saveEdit(msg._id); if (e.key === "Escape") setEditingMsgId(null); }}
+                            className="w-full bg-white/20 rounded-lg px-2 py-1 text-sm outline-none text-primary-foreground placeholder-primary-foreground/60"
+                          />
+                          <div className="flex gap-2 justify-end">
+                            <button onClick={() => setEditingMsgId(null)} className="text-xs text-primary-foreground/70 hover:text-primary-foreground">Cancelar</button>
+                            <button onClick={() => saveEdit(msg._id)} className="text-xs font-semibold text-primary-foreground">Guardar</button>
+                          </div>
+                        </div>
+                      ) : (
+                        <>
+                          <p className="leading-relaxed">{msg.body}</p>
+                          {msg.edited && <span className="text-xs opacity-60 italic">(editado)</span>}
+                          <div className="flex items-center justify-end gap-1 mt-1">
+                            {isMe && (
+                              <button
+                                onClick={() => { setEditingMsgId(msg._id); setEditingBody(msg.body); }}
+                                className="opacity-0 group-hover:opacity-70 hover:!opacity-100 transition-opacity mr-1"
+                                title="Editar mensaje"
+                              >
+                                <Edit3 size={11} className="text-primary-foreground" />
+                              </button>
+                            )}
+                            <span className={`text-xs ${isMe ? "text-primary-foreground/60" : "text-muted-foreground"}`}>{msg.sent_at.slice(11, 16)}</span>
+                            {isMe && (msg.is_read ? <CheckCheck size={12} className="text-primary-foreground/60" /> : <Check size={12} className="text-primary-foreground/60" />)}
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+              <div ref={bottomRef} />
+            </div>
+
+            <div className="p-4 border-t border-border flex items-center gap-3">
+              <input
+                value={text}
+                onChange={(e) => setText(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && sendMessage()}
+                placeholder="Escribir mensaje..."
+                className="flex-1 bg-input-background rounded-xl px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-primary/20 transition"
+              />
+              <button onClick={sendMessage} disabled={!text.trim() || sending}
+                className="bg-primary text-primary-foreground p-2.5 rounded-xl disabled:opacity-40 hover:opacity-90 transition-opacity">
+                <Send size={16} />
+              </button>
+            </div>
           </div>
-        </div>
+        )}
       </div>
     </div>
   );
@@ -2168,6 +2485,8 @@ function NotificationsPage({ user }: { user: UserSession }) {
 
   const iconMap: Record<string, typeof Bell> = {
     like: ThumbsUp, comment: MessageCircle, application_update: Briefcase,
+    connection_request: UserPlus, connection_accepted: UserCheck,
+    group_join: UsersRound, group_promoted: Shield, group_message: MessageSquare,
   };
 
   const unread = notifs.filter((n) => !n.is_read).length;
@@ -2223,6 +2542,16 @@ function NotificationsPage({ user }: { user: UserSession }) {
   );
 }
 
+type GroupMessage = {
+  _id: string;
+  group_id: string;
+  sender_id: string;
+  sender_name: string;
+  sender_photo: string;
+  body: string;
+  sent_at: string;
+};
+
 // ─── Groups Page ─────────────────────────────────────────────────────────────
 function GroupsPage({ user }: { user: UserSession }) {
   const [tab, setTab] = useState<"explore" | "mine">("explore");
@@ -2271,6 +2600,15 @@ function GroupsPage({ user }: { user: UserSession }) {
     const interval = setInterval(() => loadMembers(selected.group_id), 15000);
     return () => clearInterval(interval);
   }, [selected?.group_id]);
+
+  const promoteMember = async (target_user_id: string) => {
+    if (!selected) return;
+    await fetch(`${API_URL}/groups/${selected.group_id}/members/${target_user_id}/promote`, {
+      method: "PUT", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ user_id: user.user_id }),
+    });
+    await loadMembers(selected.group_id);
+  };
 
   const selectGroup = (g: Group) => {
     setSelected(g);
@@ -2418,23 +2756,39 @@ function GroupsPage({ user }: { user: UserSession }) {
 
               {/* Miembros */}
               <p className="text-sm font-semibold text-foreground mb-3">Miembros</p>
-              <div className="space-y-3 max-h-72 overflow-y-auto">
-                {members.map((m) => (
-                  <div key={m.users.user_id} className="flex items-center gap-3">
-                    {m.users.profile_photo_url ? (
-                      <img src={m.users.profile_photo_url} alt={m.users.name} className="w-9 h-9 rounded-full object-cover shrink-0" />
-                    ) : (
-                      <div className="w-9 h-9 rounded-full bg-primary/20 flex items-center justify-center text-primary font-bold text-sm shrink-0">{m.users.name[0]}</div>
-                    )}
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium text-foreground truncate">{m.users.name}{m.users.surname ? ` ${m.users.surname}` : ""}</p>
+              <div className="space-y-2 max-h-48 overflow-y-auto mb-4">
+                {members.map((m) => {
+                  const isAdmin = selected.admin_id === user.user_id || members.find((me) => me.users.user_id === user.user_id)?.role === "admin";
+                  const canPromote = isAdmin && m.users.user_id !== user.user_id && m.role !== "admin";
+                  return (
+                    <div key={m.users.user_id} className="flex items-center gap-3">
+                      {m.users.profile_photo_url ? (
+                        <img src={m.users.profile_photo_url} alt={m.users.name} className="w-9 h-9 rounded-full object-cover shrink-0" />
+                      ) : (
+                        <div className="w-9 h-9 rounded-full bg-primary/20 flex items-center justify-center text-primary font-bold text-sm shrink-0">{m.users.name[0]}</div>
+                      )}
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium text-foreground truncate">{m.users.name}{m.users.surname ? ` ${m.users.surname}` : ""}</p>
+                      </div>
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        {canPromote && (
+                          <button
+                            onClick={() => promoteMember(m.users.user_id)}
+                            className="text-xs text-primary border border-primary/30 rounded-lg px-2 py-0.5 hover:bg-primary/10 transition-colors"
+                            title="Hacer administrador"
+                          >
+                            Hacer admin
+                          </button>
+                        )}
+                        <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${m.role === "admin" ? "bg-primary/10 text-primary" : "bg-muted text-muted-foreground"}`}>
+                          {m.role === "admin" ? "Admin" : "Miembro"}
+                        </span>
+                      </div>
                     </div>
-                    <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${m.role === "admin" ? "bg-primary/10 text-primary" : "bg-muted text-muted-foreground"}`}>
-                      {m.role === "admin" ? "Admin" : "Miembro"}
-                    </span>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
+
             </div>
           )}
         </div>
@@ -2470,7 +2824,7 @@ export default function App() {
     network: <NetworkPage user={currentUser} onNavigate={handleNavigate} />,
     jobs: <JobsPage user={currentUser!} pendingJobId={pendingJobId} onClearPendingJob={() => setPendingJobId(null)} />,
     groups: <GroupsPage user={currentUser} />,
-    messages: <MessagesPage />,
+    messages: <MessagesPage user={currentUser!} />,
     notifications: <NotificationsPage user={currentUser} />,
   };
 
