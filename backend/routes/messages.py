@@ -165,6 +165,21 @@ def edit_message(message_id):
         return jsonify({"error": str(e)}), 500
 
 
+@messages_bp.route("/message/<message_id>", methods=["DELETE"])
+def delete_message(message_id):
+    """El emisor elimina su propio mensaje."""
+    data = request.get_json() or {}
+    user_id = (data.get("user_id") or "").strip()
+    if not user_id or not cassandra_available():
+        return jsonify({"error": "user_id requerido."}), 400
+    try:
+        _msgs().delete_one({"_id": message_id, "sender_id": user_id})
+        return jsonify({"ok": True}), 200
+    except Exception as e:
+        print(f"[WARN] delete_message: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
 @messages_bp.route("/<user_id>/unread-count", methods=["GET"])
 def unread_count(user_id):
     """Cuenta mensajes no leídos recibidos por el usuario."""

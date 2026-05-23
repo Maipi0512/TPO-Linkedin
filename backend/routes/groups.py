@@ -399,3 +399,41 @@ def send_group_message(group_id):
         print(f"[WARN] notif send_group_message: {e}")
 
     return jsonify({"ok": True}), 201
+
+
+@groups_bp.route("/<group_id>/messages/<message_id>", methods=["PUT"])
+def edit_group_message(group_id, message_id):
+    """El emisor puede editar su propio mensaje de grupo."""
+    if not cassandra_available():
+        return jsonify({"error": "Mensajería no disponible"}), 503
+    data = request.get_json() or {}
+    user_id = (data.get("user_id") or "").strip()
+    body = (data.get("body") or "").strip()
+    if not user_id or not body:
+        return jsonify({"error": "user_id y body requeridos."}), 400
+    try:
+        _group_msgs().update_one(
+            {"_id": message_id, "group_id": group_id, "sender_id": user_id},
+            {"$set": {"body": body, "edited": True}},
+        )
+        return jsonify({"ok": True}), 200
+    except Exception as e:
+        print(f"[WARN] edit_group_message: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+@groups_bp.route("/<group_id>/messages/<message_id>", methods=["DELETE"])
+def delete_group_message(group_id, message_id):
+    """El emisor elimina su propio mensaje de grupo."""
+    if not cassandra_available():
+        return jsonify({"error": "Mensajería no disponible"}), 503
+    data = request.get_json() or {}
+    user_id = (data.get("user_id") or "").strip()
+    if not user_id:
+        return jsonify({"error": "user_id requerido."}), 400
+    try:
+        _group_msgs().delete_one({"_id": message_id, "group_id": group_id, "sender_id": user_id})
+        return jsonify({"ok": True}), 200
+    except Exception as e:
+        print(f"[WARN] delete_group_message: {e}")
+        return jsonify({"error": str(e)}), 500

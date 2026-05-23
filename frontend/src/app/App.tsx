@@ -2193,6 +2193,8 @@ function MessagesPage({ user }: { user: UserSession }) {
   const [groupMsgText, setGroupMsgText] = useState("");
   const [sendingGroupMsg, setSendingGroupMsg] = useState(false);
   const [groupMsgError, setGroupMsgError] = useState("");
+  const [editingGroupMsgId, setEditingGroupMsgId] = useState<string | null>(null);
+  const [editingGroupBody, setEditingGroupBody] = useState("");
   const bottomRef = useRef<HTMLDivElement>(null);
   const groupBottomRef = useRef<HTMLDivElement>(null);
 
@@ -2317,6 +2319,33 @@ function MessagesPage({ user }: { user: UserSession }) {
     if (selected) await loadMessages(selected.conversation_id);
   };
 
+  const deleteMessage = async (msgId: string) => {
+    await fetch(`${API_URL}/messages/message/${msgId}`, {
+      method: "DELETE", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ user_id: user.user_id }),
+    });
+    if (selected) await loadMessages(selected.conversation_id);
+  };
+
+  const saveGroupEdit = async (msgId: string) => {
+    if (!editingGroupBody.trim() || !selectedGroup) return;
+    await fetch(`${API_URL}/groups/${selectedGroup.group_id}/messages/${msgId}`, {
+      method: "PUT", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ user_id: user.user_id, body: editingGroupBody.trim() }),
+    });
+    setEditingGroupMsgId(null);
+    await loadGroupMessages(selectedGroup.group_id);
+  };
+
+  const deleteGroupMessage = async (msgId: string) => {
+    if (!selectedGroup) return;
+    await fetch(`${API_URL}/groups/${selectedGroup.group_id}/messages/${msgId}`, {
+      method: "DELETE", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ user_id: user.user_id }),
+    });
+    await loadGroupMessages(selectedGroup.group_id);
+  };
+
   const filteredUsers = allUsers.filter((u) =>
     `${u.name} ${u.surname}`.toLowerCase().includes(search.toLowerCase())
   );
@@ -2431,8 +2460,9 @@ function MessagesPage({ user }: { user: UserSession }) {
               )}
               {groupMessages.map((msg) => {
                 const isMe = msg.sender_id === user.user_id;
+                const isEditingThis = editingGroupMsgId === msg._id;
                 return (
-                  <div key={msg._id} className={`flex gap-2 ${isMe ? "justify-end" : "justify-start"}`}>
+                  <div key={msg._id} className={`flex gap-2 ${isMe ? "justify-end" : "justify-start"} group`}>
                     {!isMe && (
                       msg.sender_photo
                         ? <img src={msg.sender_photo} alt={msg.sender_name} className="w-8 h-8 rounded-full object-cover shrink-0 mt-0.5" />
@@ -2440,8 +2470,47 @@ function MessagesPage({ user }: { user: UserSession }) {
                     )}
                     <div className={`max-w-xs rounded-2xl px-4 py-2.5 text-sm ${isMe ? "bg-primary text-primary-foreground rounded-br-sm" : "bg-muted text-foreground rounded-bl-sm"}`}>
                       {!isMe && <p className="text-xs font-semibold text-primary mb-1">{msg.sender_name}</p>}
-                      <p className="leading-relaxed">{msg.body}</p>
-                      <p className={`text-xs mt-1 text-right ${isMe ? "text-primary-foreground/60" : "text-muted-foreground"}`}>{msg.sent_at.slice(11, 16)}</p>
+                      {isEditingThis ? (
+                        <div className="space-y-1.5">
+                          <input
+                            autoFocus
+                            value={editingGroupBody}
+                            onChange={(e) => setEditingGroupBody(e.target.value)}
+                            onKeyDown={(e) => { if (e.key === "Enter") saveGroupEdit(msg._id); if (e.key === "Escape") setEditingGroupMsgId(null); }}
+                            className="w-full bg-white/20 rounded-lg px-2 py-1 text-sm outline-none text-primary-foreground placeholder-primary-foreground/60"
+                          />
+                          <div className="flex gap-2 justify-end">
+                            <button onClick={() => setEditingGroupMsgId(null)} className="text-xs text-primary-foreground/70 hover:text-primary-foreground">Cancelar</button>
+                            <button onClick={() => saveGroupEdit(msg._id)} className="text-xs font-semibold text-primary-foreground">Guardar</button>
+                          </div>
+                        </div>
+                      ) : (
+                        <>
+                          <p className="leading-relaxed">{msg.body}</p>
+                          {msg.edited && <span className="text-xs opacity-60 italic">(editado)</span>}
+                          <div className="flex items-center justify-end gap-1 mt-1">
+                            {isMe && (
+                              <>
+                                <button
+                                  onClick={() => { setEditingGroupMsgId(msg._id); setEditingGroupBody(msg.body); }}
+                                  className="opacity-0 group-hover:opacity-70 hover:!opacity-100 transition-opacity"
+                                  title="Editar"
+                                >
+                                  <Edit3 size={11} className="text-primary-foreground" />
+                                </button>
+                                <button
+                                  onClick={() => deleteGroupMessage(msg._id)}
+                                  className="opacity-0 group-hover:opacity-70 hover:!opacity-100 transition-opacity mr-1"
+                                  title="Eliminar"
+                                >
+                                  <Trash2 size={11} className="text-primary-foreground" />
+                                </button>
+                              </>
+                            )}
+                            <span className={`text-xs ${isMe ? "text-primary-foreground/60" : "text-muted-foreground"}`}>{msg.sent_at.slice(11, 16)}</span>
+                          </div>
+                        </>
+                      )}
                     </div>
                   </div>
                 );
@@ -2507,16 +2576,28 @@ function MessagesPage({ user }: { user: UserSession }) {
                           {msg.edited && <span className="text-xs opacity-60 italic">(editado)</span>}
                           <div className="flex items-center justify-end gap-1 mt-1">
                             {isMe && (
-                              <button
-                                onClick={() => { setEditingMsgId(msg._id); setEditingBody(msg.body); }}
-                                className="opacity-0 group-hover:opacity-70 hover:!opacity-100 transition-opacity mr-1"
-                                title="Editar mensaje"
-                              >
-                                <Edit3 size={11} className="text-primary-foreground" />
-                              </button>
+                              <>
+                                <button
+                                  onClick={() => { setEditingMsgId(msg._id); setEditingBody(msg.body); }}
+                                  className="opacity-0 group-hover:opacity-70 hover:!opacity-100 transition-opacity"
+                                  title="Editar"
+                                >
+                                  <Edit3 size={11} className="text-primary-foreground" />
+                                </button>
+                                <button
+                                  onClick={() => deleteMessage(msg._id)}
+                                  className="opacity-0 group-hover:opacity-70 hover:!opacity-100 transition-opacity mr-1"
+                                  title="Eliminar"
+                                >
+                                  <Trash2 size={11} className="text-primary-foreground" />
+                                </button>
+                              </>
                             )}
                             <span className={`text-xs ${isMe ? "text-primary-foreground/60" : "text-muted-foreground"}`}>{msg.sent_at.slice(11, 16)}</span>
-                            {isMe && (msg.is_read ? <CheckCheck size={12} className="text-primary-foreground/60" /> : <Check size={12} className="text-primary-foreground/60" />)}
+                            {isMe && (msg.is_read
+                              ? <CheckCheck size={12} className="text-primary-foreground" />
+                              : <Check size={12} className="text-primary-foreground/40" />
+                            )}
                           </div>
                         </>
                       )}
@@ -2644,6 +2725,7 @@ type GroupMessage = {
   sender_photo: string;
   body: string;
   sent_at: string;
+  edited?: boolean;
 };
 
 // ─── Groups Page ─────────────────────────────────────────────────────────────
