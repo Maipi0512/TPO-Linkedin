@@ -125,6 +125,23 @@ def upload_photo(user_id):
     return jsonify({"url": url}), 200
 
 
+@profile_bp.route("/<user_id>/photo", methods=["DELETE"])
+def delete_photo(user_id):
+    user_res = supabase_admin.table("users").select("profile_photo_url").eq("user_id", user_id).limit(1).execute()
+    if not user_res.data:
+        return jsonify({"error": "Usuario no encontrado."}), 404
+
+    # Intentar borrar de storage (no falla si no existe)
+    for ext in ("jpg", "jpeg", "png", "webp"):
+        try:
+            supabase_admin.storage.from_(AVATAR_BUCKET).remove([f"{user_id}.{ext}"])
+        except Exception:
+            pass
+
+    supabase_admin.table("users").update({"profile_photo_url": None}).eq("user_id", user_id).execute()
+    return jsonify({"ok": True}), 200
+
+
 # ─── Experiencia laboral ──────────────────────────────────────────────────────
 
 @profile_bp.route("/<user_id>/experience", methods=["POST"])

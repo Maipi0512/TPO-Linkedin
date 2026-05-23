@@ -35,6 +35,7 @@ def list_posts():
     user_id = request.args.get("user_id", "")
 
     pipeline = [
+        {"$match": {"group_id": {"$exists": False}}},
         {"$sort": {"created_at": -1}},
         {"$limit": 50},
         {

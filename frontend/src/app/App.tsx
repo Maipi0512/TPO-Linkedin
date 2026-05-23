@@ -4,12 +4,12 @@ import {
   MessageCircle, ThumbsUp, Send, Plus,
   CheckCircle, Clock, MapPin, Building2, GraduationCap, Star, X as XIcon,
   Paperclip, Check, CheckCheck, Edit3, Trash2,
-  UserPlus, UserCheck, ArrowRight, Shield, Zap, Globe, UsersRound
+  UserPlus, UserCheck, ArrowRight, Shield, Zap, Globe, UsersRound, ChevronLeft
 } from "lucide-react";
 
 const API_URL = "http://localhost:5000";
 
-type Page = "home" | "auth" | "feed" | "profile" | "network" | "jobs" | "messages" | "notifications" | "groups";
+type Page = "home" | "auth" | "feed" | "profile" | "network" | "jobs" | "messages" | "notifications" | "groups" | "user-profile";
 type AuthMode = "login" | "register" | "forgot" | "reset";
 
 type Experience = { we_id: number; title: string; description: string | null; from_date: string; end_date: string | null; is_current: boolean; companies: { name: string } | null };
@@ -97,6 +97,18 @@ type UserGroup = {
   role: string;
   joined_at: string;
   groups: Group;
+};
+
+type GroupPost = {
+  _id: string;
+  user_id: string;
+  author_name: string;
+  author_surname: string;
+  author_photo_url: string | null;
+  content: string;
+  created_at: string;
+  likes_count: number;
+  user_liked: boolean;
 };
 
 
@@ -535,7 +547,7 @@ function AuthPage({ onLogin, initialMode }: { onLogin: (user: UserSession) => vo
 }
 
 // ─── Feed Page ────────────────────────────────────────────────────────────────
-function FeedPage({ user }: { user: UserSession }) {
+function FeedPage({ user, onViewProfile }: { user: UserSession; onViewProfile: (id: string) => void }) {
   const [posts, setPosts] = useState<Post[]>([]);
   const [loading, setLoading] = useState(true);
   const [newPost, setNewPost] = useState("");
@@ -725,13 +737,13 @@ function FeedPage({ user }: { user: UserSession }) {
             <div className="p-4">
               <div className="flex items-start justify-between mb-3">
                 <div className="flex items-center gap-3">
-                  <div className="w-11 h-11 shrink-0">
+                  <button onClick={() => onViewProfile(post.user_id)} className="w-11 h-11 shrink-0 rounded-full focus:outline-none hover:opacity-80 transition-opacity">
                     {avatarFallback(post.author_name, post.author_surname, post.author_photo_url)}
-                  </div>
+                  </button>
                   <div>
-                    <p className="font-semibold text-sm text-foreground">
+                    <button onClick={() => onViewProfile(post.user_id)} className="font-semibold text-sm text-foreground hover:underline text-left">
                       {post.author_name} {post.author_surname}
-                    </p>
+                    </button>
                     <p className="text-xs text-muted-foreground flex items-center gap-1 mt-0.5">
                       <Clock size={10} />
                       {new Date(post.created_at).toLocaleDateString("es-AR", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}
@@ -856,6 +868,19 @@ function ProfilePage({ user, onUserUpdate }: { user: UserSession; onUserUpdate: 
   const [deleteError, setDeleteError] = useState("");
 
   // Forms para agregar items
+  const [deletingPhoto, setDeletingPhoto] = useState(false);
+
+  const handlePhotoDelete = async () => {
+    if (deletingPhoto || !profile?.profile_photo_url) return;
+    setDeletingPhoto(true);
+    const res = await fetch(`${API_URL}/profile/${user.user_id}/photo`, { method: "DELETE" });
+    if (res.ok) {
+      onUserUpdate({ ...user, profile_photo_url: null });
+      load();
+    }
+    setDeletingPhoto(false);
+  };
+
   const [showExpForm, setShowExpForm] = useState(false);
   const [showEduForm, setShowEduForm] = useState(false);
   const [showSkillForm, setShowSkillForm] = useState(false);
@@ -964,16 +989,28 @@ function ProfilePage({ user, onUserUpdate }: { user: UserSession; onUserUpdate: 
           <img src="https://images.unsplash.com/photo-1497366216548-37526070297c?w=700&h=200&fit=crop&auto=format" alt="cover" className="w-full h-full object-cover opacity-40" />
         </div>
         <div className="px-6 pb-6 -mt-12 relative">
-          <label className="cursor-pointer group relative inline-block">
-            {profile.profile_photo_url
-              ? <img src={profile.profile_photo_url} alt={profile.name} className="w-24 h-24 rounded-full object-cover ring-4 ring-card group-hover:opacity-80 transition" />
-              : <div className="w-24 h-24 rounded-full bg-primary/20 ring-4 ring-card flex items-center justify-center text-3xl font-bold text-primary">{profile.name[0]}</div>
-            }
-            <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition">
-              <span className="bg-black/50 text-white text-xs rounded-full px-2 py-1">Cambiar foto</span>
-            </div>
-            <input type="file" accept="image/*" className="hidden" onChange={handlePhotoChange} />
-          </label>
+          <div className="relative inline-block group">
+            <label className="cursor-pointer">
+              {profile.profile_photo_url
+                ? <img src={profile.profile_photo_url} alt={profile.name} className="w-24 h-24 rounded-full object-cover ring-4 ring-card group-hover:opacity-70 transition" />
+                : <div className="w-24 h-24 rounded-full bg-primary/20 ring-4 ring-card flex items-center justify-center text-3xl font-bold text-primary group-hover:opacity-70 transition">{profile.name[0]}</div>
+              }
+              <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition pointer-events-none">
+                <span className="bg-black/50 text-white text-xs rounded-full px-2 py-1">{profile.profile_photo_url ? "Cambiar foto" : "Agregar foto"}</span>
+              </div>
+              <input type="file" accept="image/*" className="hidden" onChange={handlePhotoChange} />
+            </label>
+            {profile.profile_photo_url && (
+              <button
+                onClick={handlePhotoDelete}
+                disabled={deletingPhoto}
+                title="Eliminar foto"
+                className="absolute -top-1 -right-1 w-6 h-6 bg-destructive text-white rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition hover:bg-destructive/80 disabled:opacity-50 z-10"
+              >
+                <XIcon size={12} />
+              </button>
+            )}
+          </div>
 
           <div className="mt-3 flex items-start justify-between">
             <div className="flex-1">
@@ -1157,7 +1194,25 @@ function ProfilePage({ user, onUserUpdate }: { user: UserSession; onUserUpdate: 
         <p className="text-xs text-muted-foreground mb-3">Tus roles activos condicionan las funcionalidades disponibles.</p>
         <div className="flex flex-wrap gap-2 mb-3">
           {user.roles.map((r) => (
-            <span key={r} className="bg-primary/10 text-primary text-xs font-semibold px-3 py-1.5 rounded-full capitalize">{r}</span>
+            <span key={r} className="flex items-center gap-1.5 bg-primary/10 text-primary text-xs font-semibold px-3 py-1.5 rounded-full capitalize">
+              {r}
+              {user.roles.length > 1 && (
+                <button
+                  title={`Desactivar rol ${r}`}
+                  onClick={async () => {
+                    const res = await fetch(`${API_URL}/auth/remove-role`, {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({ user_id: user.user_id, role: r }),
+                    });
+                    if (res.ok) { const data = await res.json(); onUserUpdate({ ...user, roles: data.roles }); }
+                  }}
+                  className="ml-0.5 hover:text-destructive transition-colors leading-none"
+                >
+                  ×
+                </button>
+              )}
+            </span>
           ))}
         </div>
         {!user.roles.includes("candidato") && (
@@ -1175,9 +1230,6 @@ function ProfilePage({ user, onUserUpdate }: { user: UserSession; onUserUpdate: 
           }} className="text-sm border border-border rounded-xl px-4 py-2 hover:bg-muted transition-colors">
             Agregar rol Poster
           </button>
-        )}
-        {user.roles.includes("candidato") && user.roles.includes("poster") && (
-          <p className="text-xs text-muted-foreground">Tenés ambos roles activos.</p>
         )}
       </div>
 
@@ -1234,11 +1286,11 @@ function ProfilePage({ user, onUserUpdate }: { user: UserSession; onUserUpdate: 
 
 // ─── Network Page ─────────────────────────────────────────────────────────────
 type Neo4jUser = { user_id: string; name: string; surname: string; photo_url: string };
-type Suggestion = { user: Neo4jUser; mutuals: number };
+type Suggestion = { user: Neo4jUser; mutuals: number; reason?: string | null };
 type PendingRequest = { user: Neo4jUser; created_at: string };
 type JobMatch = { job_id: string; matching_skills: string[]; match_count: number };
 
-function NetworkPage({ user, onNavigate }: { user: UserSession; onNavigate: (page: Page, jobId?: string) => void }) {
+function NetworkPage({ user, onNavigate, onViewProfile }: { user: UserSession; onNavigate: (page: Page, jobId?: string) => void; onViewProfile: (id: string) => void }) {
   const [tab, setTab] = useState<"connections" | "pending" | "suggestions" | "job-matches">("connections");
   const [connections, setConnections] = useState<Neo4jUser[]>([]);
   const [pending, setPending] = useState<PendingRequest[]>([]);
@@ -1357,9 +1409,9 @@ function NetworkPage({ user, onNavigate }: { user: UserSession; onNavigate: (pag
             <div className="space-y-3">
               {filteredConn.map((c) => (
                 <div key={c.user_id} className="flex items-center gap-3 p-3 rounded-xl hover:bg-muted transition-colors">
-                  {avatar(c)}
+                  <button onClick={() => onViewProfile(c.user_id)} className="shrink-0 hover:opacity-80 transition-opacity rounded-full">{avatar(c)}</button>
                   <div className="flex-1 min-w-0">
-                    <p className="font-semibold text-sm text-foreground truncate">{fullName(c)}</p>
+                    <button onClick={() => onViewProfile(c.user_id)} className="font-semibold text-sm text-foreground truncate hover:underline text-left">{fullName(c)}</button>
                   </div>
                   <button onClick={() => handleRemove(c.user_id)} className="text-xs text-muted-foreground border border-border rounded-lg px-3 py-1.5 hover:bg-muted transition-colors">
                     Eliminar
@@ -1383,9 +1435,9 @@ function NetworkPage({ user, onNavigate }: { user: UserSession; onNavigate: (pag
             <div className="space-y-3">
               {pending.map((p) => (
                 <div key={p.user.user_id} className="flex items-center gap-3 p-3 rounded-xl hover:bg-muted transition-colors">
-                  {avatar(p.user)}
+                  <button onClick={() => onViewProfile(p.user.user_id)} className="shrink-0 hover:opacity-80 transition-opacity rounded-full">{avatar(p.user)}</button>
                   <div className="flex-1 min-w-0">
-                    <p className="font-semibold text-sm text-foreground truncate">{fullName(p.user)}</p>
+                    <button onClick={() => onViewProfile(p.user.user_id)} className="font-semibold text-sm text-foreground truncate hover:underline text-left">{fullName(p.user)}</button>
                   </div>
                   <div className="flex gap-2">
                     <button onClick={() => handleAccept(p.user.user_id)} className="text-xs bg-primary text-primary-foreground rounded-lg px-3 py-1.5 font-semibold hover:opacity-90 transition-opacity">
@@ -1418,17 +1470,24 @@ function NetworkPage({ user, onNavigate }: { user: UserSession; onNavigate: (pag
             <p className="text-muted-foreground text-sm text-center py-6">No hay sugerencias disponibles.</p>
           ) : (
             <div className="grid grid-cols-3 gap-4">
-              {filteredSug.map(({ user: s, mutuals }) => (
+              {filteredSug.map(({ user: s, mutuals, reason }) => (
                 <div key={s.user_id} className="border border-border rounded-2xl overflow-hidden text-center hover:shadow-md transition-shadow">
                   <div className="h-14 bg-gradient-to-r from-primary/20 to-primary/10" />
                   <div className="-mt-7 pb-4 px-3">
-                    {s.photo_url ? (
-                      <img src={s.photo_url} alt={s.name} className="w-14 h-14 rounded-full object-cover mx-auto ring-2 ring-card" />
-                    ) : (
-                      <div className="w-14 h-14 rounded-full bg-primary/20 flex items-center justify-center text-primary font-bold text-lg mx-auto ring-2 ring-card">{s.name[0]}</div>
+                    <button onClick={() => onViewProfile(s.user_id)} className="block mx-auto hover:opacity-80 transition-opacity">
+                      {s.photo_url ? (
+                        <img src={s.photo_url} alt={s.name} className="w-14 h-14 rounded-full object-cover ring-2 ring-card" />
+                      ) : (
+                        <div className="w-14 h-14 rounded-full bg-primary/20 flex items-center justify-center text-primary font-bold text-lg ring-2 ring-card">{s.name[0]}</div>
+                      )}
+                    </button>
+                    <button onClick={() => onViewProfile(s.user_id)} className="font-semibold text-sm text-foreground mt-2 leading-tight hover:underline block mx-auto">{fullName(s)}</button>
+                    {mutuals > 0 && (
+                      <p className="text-xs text-muted-foreground mt-1">{mutuals} contacto{mutuals !== 1 ? "s" : ""} en común</p>
                     )}
-                    <p className="font-semibold text-sm text-foreground mt-2 leading-tight">{fullName(s)}</p>
-                    {mutuals > 0 && <p className="text-xs text-muted-foreground mt-1">{mutuals} contacto{mutuals !== 1 ? "s" : ""} en común</p>}
+                    {mutuals === 0 && reason === "misma empresa" && (
+                      <p className="text-xs text-muted-foreground mt-1">Trabajaron en la misma empresa</p>
+                    )}
                     <button
                       onClick={() => handleConnect(s.user_id)}
                       disabled={sentIds.has(s.user_id)}
@@ -1515,7 +1574,7 @@ function JobsPage({ user, pendingJobId, onClearPendingJob }: { user: UserSession
   const [filter, setFilter] = useState("all");
   const [applying, setApplying] = useState(false);
   const [showCreateForm, setShowCreateForm] = useState(false);
-  const [newJob, setNewJob] = useState({ title: "", description: "", location: "", modality: "hibrido", shift: "full-time", employment_type: "full-time", working_hours: "", skill_names: [] as string[] });
+  const [newJob, setNewJob] = useState({ title: "", description: "", location: "", company_name: "", modality: "hibrido", shift: "mañana", employment_type: "full-time", working_hours: "", skill_names: [] as string[] });
   const [skillInput, setSkillInput] = useState("");
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState("");
@@ -1533,8 +1592,10 @@ function JobsPage({ user, pendingJobId, onClearPendingJob }: { user: UserSession
     if (isCandidate) fetch(`${API_URL}/profile/${user.user_id}`).then((r) => r.ok ? r.json() : null).then((d) => d && setProfile(d));
   }, [user.user_id]);
 
-  const loadJobs = async () => {
-    const res = await fetch(`${API_URL}/jobs`);
+  const loadJobs = async (q?: string) => {
+    const term = q !== undefined ? q : search;
+    const params = term.trim() ? `?q=${encodeURIComponent(term.trim())}` : "";
+    const res = await fetch(`${API_URL}/jobs${params}`);
     if (res.ok) {
       const data: Job[] = await res.json();
       setJobs(data);
@@ -1549,6 +1610,14 @@ function JobsPage({ user, pendingJobId, onClearPendingJob }: { user: UserSession
       setMyApplications(data);
       setAppliedIds(new Set(data.map((a) => a.job_id)));
     }
+  };
+
+  const cancelApplication = async (app_id: string) => {
+    await fetch(`${API_URL}/jobs/applications/${app_id}`, {
+      method: "DELETE", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ user_id: user.user_id }),
+    });
+    await loadMyApplications();
   };
 
   const loadPostedJobs = async () => {
@@ -1584,6 +1653,12 @@ function JobsPage({ user, pendingJobId, onClearPendingJob }: { user: UserSession
     }, 15000);
     return () => clearInterval(interval);
   }, [user.user_id]);
+
+  // Debounced re-fetch when search term changes
+  useEffect(() => {
+    const t = setTimeout(() => loadJobs(search), 300);
+    return () => clearTimeout(t);
+  }, [search]);
 
   useEffect(() => {
     if (!pendingJobId || jobs.length === 0) return;
@@ -1621,7 +1696,7 @@ function JobsPage({ user, pendingJobId, onClearPendingJob }: { user: UserSession
     setCreating(false);
     setCreateError("");
     setSkillInput("");
-    setNewJob({ title: "", description: "", location: "", modality: "hibrido", shift: "full-time", employment_type: "full-time", working_hours: "", skill_names: [] });
+    setNewJob({ title: "", description: "", location: "", company_name: "", modality: "hibrido", shift: "mañana", employment_type: "full-time", working_hours: "", skill_names: [] });
   };
 
   const createJob = async () => {
@@ -1631,7 +1706,7 @@ function JobsPage({ user, pendingJobId, onClearPendingJob }: { user: UserSession
     try {
       const res = await fetch(`${API_URL}/jobs`, {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...newJob, user_id: user.user_id, company_id: user.company_id ?? null, skill_names: newJob.skill_names }),
+        body: JSON.stringify({ ...newJob, user_id: user.user_id, company_id: user.company_id ?? null }),
       });
       const json = await res.json();
       if (res.ok) {
@@ -1673,7 +1748,7 @@ function JobsPage({ user, pendingJobId, onClearPendingJob }: { user: UserSession
   const startEditJob = (e: React.MouseEvent, job: Job) => {
     e.stopPropagation();
     setEditingJob(job);
-    setEditJobForm({ title: job.title, description: job.description ?? "", location: job.location ?? "", modality: job.modality, shift: job.shift, employment_type: (job as any).employment_type ?? "full-time" });
+    setEditJobForm({ title: job.title, description: job.description ?? "", location: job.location ?? "", modality: job.modality, shift: job.shift || "mañana", employment_type: (job as any).employment_type ?? "full-time" });
   };
 
   const saveEditJob = async () => {
@@ -1690,12 +1765,9 @@ function JobsPage({ user, pendingJobId, onClearPendingJob }: { user: UserSession
     await loadJobs();
   };
 
-  const filtered = jobs.filter((j) => {
-    const q = search.toLowerCase();
-    const matchSearch = j.title.toLowerCase().includes(q) || (j.companies?.name ?? "").toLowerCase().includes(q) || (j.location ?? "").toLowerCase().includes(q) || j.job_skill.some((s) => s.skills.name.toLowerCase().includes(q));
-    const matchFilter = filter === "all" || (filter === "remote" && j.modality === "remoto");
-    return matchSearch && matchFilter;
-  });
+  const filtered = jobs.filter((j) =>
+    filter === "all" || (filter === "remote" && j.modality === "remoto")
+  );
 
   const inputCls = "w-full bg-input-background border border-border rounded-xl px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/20 transition";
   const labelCls = "text-xs font-medium text-foreground block mb-1";
@@ -1853,7 +1925,12 @@ function JobsPage({ user, pendingJobId, onClearPendingJob }: { user: UserSession
                         <p className="text-xs text-muted-foreground">{app.updated_at?.slice(0, 10)}</p>
                       </div>
                       <StatusBadge status={app.status} />
-                      <span className="text-xs text-muted-foreground ml-2">{isExpanded ? "▲" : "▼"}</span>
+                      <button
+                        onClick={(e) => { e.stopPropagation(); cancelApplication(app.application_id); }}
+                        className="text-muted-foreground hover:text-destructive transition-colors p-1.5 ml-1 shrink-0"
+                        title="Cancelar postulación"
+                      ><Trash2 size={14} /></button>
+                      <span className="text-xs text-muted-foreground">{isExpanded ? "▲" : "▼"}</span>
                     </div>
                     {isExpanded && (
                       <div className="px-5 pb-4 bg-muted/30">
@@ -1894,7 +1971,10 @@ function JobsPage({ user, pendingJobId, onClearPendingJob }: { user: UserSession
 
             {showCreateForm && (
               <div className="mb-4 p-4 bg-muted rounded-xl border border-border space-y-3">
-                <div><label className={labelCls}>Título *</label><input className={inputCls} placeholder="Ej: Senior React Developer" value={newJob.title} onChange={(e) => setNewJob({ ...newJob, title: e.target.value })} /></div>
+                <div className="grid grid-cols-2 gap-2">
+                  <div><label className={labelCls}>Título *</label><input className={inputCls} placeholder="Ej: Senior React Developer" value={newJob.title} onChange={(e) => setNewJob({ ...newJob, title: e.target.value })} /></div>
+                  <div><label className={labelCls}>Empresa</label><input className={inputCls} placeholder="Nombre de la empresa" value={newJob.company_name} onChange={(e) => setNewJob({ ...newJob, company_name: e.target.value })} /></div>
+                </div>
                 <div><label className={labelCls}>Descripción</label><textarea rows={3} className={inputCls + " resize-none"} placeholder="Descripción del puesto..." value={newJob.description} onChange={(e) => setNewJob({ ...newJob, description: e.target.value })} /></div>
                 <div className="grid grid-cols-3 gap-2">
                   <div><label className={labelCls}>Ubicación</label><input className={inputCls} placeholder="Buenos Aires" value={newJob.location} onChange={(e) => setNewJob({ ...newJob, location: e.target.value })} /></div>
@@ -1907,7 +1987,7 @@ function JobsPage({ user, pendingJobId, onClearPendingJob }: { user: UserSession
                   <div>
                     <label className={labelCls}>Turno</label>
                     <select className={inputCls} value={newJob.shift} onChange={(e) => setNewJob({ ...newJob, shift: e.target.value })}>
-                      {["full-time", "part-time", "freelance"].map((t) => <option key={t} value={t}>{t}</option>)}
+                      {["mañana", "tarde", "noche"].map((t) => <option key={t} value={t}>{t}</option>)}
                     </select>
                   </div>
                 </div>
@@ -2013,7 +2093,7 @@ function JobsPage({ user, pendingJobId, onClearPendingJob }: { user: UserSession
                             <div>
                               <label className={labelCls}>Turno</label>
                               <select className={inputCls} value={editJobForm.shift} onChange={(e) => setEditJobForm({ ...editJobForm, shift: e.target.value })}>
-                                {["full-time", "part-time", "freelance"].map((t) => <option key={t}>{t}</option>)}
+                                {["mañana", "tarde", "noche"].map((t) => <option key={t}>{t}</option>)}
                               </select>
                             </div>
                           </div>
@@ -2553,7 +2633,7 @@ type GroupMessage = {
 };
 
 // ─── Groups Page ─────────────────────────────────────────────────────────────
-function GroupsPage({ user }: { user: UserSession }) {
+function GroupsPage({ user, onViewProfile }: { user: UserSession; onViewProfile: (id: string) => void }) {
   const [tab, setTab] = useState<"explore" | "mine">("explore");
   const [allGroups, setAllGroups] = useState<Group[]>([]);
   const [myGroups, setMyGroups] = useState<UserGroup[]>([]);
@@ -2565,6 +2645,10 @@ function GroupsPage({ user }: { user: UserSession }) {
   const [creating, setCreating] = useState(false);
   const [loading, setLoading] = useState(true);
   const [joining, setJoining] = useState(false);
+  const [detailTab, setDetailTab] = useState<"members" | "posts">("members");
+  const [groupPosts, setGroupPosts] = useState<GroupPost[]>([]);
+  const [newPostContent, setNewPostContent] = useState("");
+  const [postingGroup, setPostingGroup] = useState(false);
 
   const inputCls = "w-full bg-input-background border border-border rounded-xl px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/20 transition";
   const labelCls = "text-xs font-medium text-foreground block mb-1";
@@ -2589,6 +2673,39 @@ function GroupsPage({ user }: { user: UserSession }) {
     if (res.ok) setMembers(await res.json());
   };
 
+  const loadGroupPosts = async (group_id: string) => {
+    const res = await fetch(`${API_URL}/groups/${group_id}/posts?user_id=${user.user_id}`);
+    if (res.ok) setGroupPosts(await res.json());
+  };
+
+  const createGroupPost = async () => {
+    if (!selected || !newPostContent.trim() || postingGroup) return;
+    setPostingGroup(true);
+    const res = await fetch(`${API_URL}/groups/${selected.group_id}/posts`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ user_id: user.user_id, content: newPostContent.trim() }),
+    });
+    if (res.ok) { setNewPostContent(""); await loadGroupPosts(selected.group_id); }
+    setPostingGroup(false);
+  };
+
+  const toggleGroupPostLike = async (post: GroupPost) => {
+    await fetch(`${API_URL}/posts/${post._id}/like`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ user_id: user.user_id, author_name: user.name }),
+    });
+    if (selected) await loadGroupPosts(selected.group_id);
+  };
+
+  const deleteGroupPost = async (post_id: string) => {
+    if (!selected) return;
+    await fetch(`${API_URL}/groups/${selected.group_id}/posts/${post_id}`, {
+      method: "DELETE", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ user_id: user.user_id }),
+    });
+    if (selected) await loadGroupPosts(selected.group_id);
+  };
+
   useEffect(() => {
     loadAll();
     const interval = setInterval(loadAll, 15000);
@@ -2610,9 +2727,30 @@ function GroupsPage({ user }: { user: UserSession }) {
     await loadMembers(selected.group_id);
   };
 
+  const demoteMember = async (target_user_id: string) => {
+    if (!selected) return;
+    await fetch(`${API_URL}/groups/${selected.group_id}/members/${target_user_id}/demote`, {
+      method: "PUT", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ user_id: user.user_id }),
+    });
+    await loadMembers(selected.group_id);
+  };
+
+  const kickMember = async (target_user_id: string) => {
+    if (!selected) return;
+    await fetch(`${API_URL}/groups/${selected.group_id}/members/${target_user_id}/kick`, {
+      method: "DELETE", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ user_id: user.user_id }),
+    });
+    await loadMembers(selected.group_id);
+    await loadAll();
+  };
+
   const selectGroup = (g: Group) => {
     setSelected(g);
+    setDetailTab("members");
     loadMembers(g.group_id);
+    loadGroupPosts(g.group_id);
   };
 
   const handleJoin = async () => {
@@ -2754,43 +2892,271 @@ function GroupsPage({ user }: { user: UserSession }) {
                 )
               )}
 
-              {/* Miembros */}
-              <p className="text-sm font-semibold text-foreground mb-3">Miembros</p>
-              <div className="space-y-2 max-h-48 overflow-y-auto mb-4">
-                {members.map((m) => {
-                  const isAdmin = selected.admin_id === user.user_id || members.find((me) => me.users.user_id === user.user_id)?.role === "admin";
-                  const canPromote = isAdmin && m.users.user_id !== user.user_id && m.role !== "admin";
-                  return (
-                    <div key={m.users.user_id} className="flex items-center gap-3">
-                      {m.users.profile_photo_url ? (
-                        <img src={m.users.profile_photo_url} alt={m.users.name} className="w-9 h-9 rounded-full object-cover shrink-0" />
-                      ) : (
-                        <div className="w-9 h-9 rounded-full bg-primary/20 flex items-center justify-center text-primary font-bold text-sm shrink-0">{m.users.name[0]}</div>
-                      )}
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium text-foreground truncate">{m.users.name}{m.users.surname ? ` ${m.users.surname}` : ""}</p>
-                      </div>
-                      <div className="flex items-center gap-1.5 shrink-0">
-                        {canPromote && (
-                          <button
-                            onClick={() => promoteMember(m.users.user_id)}
-                            className="text-xs text-primary border border-primary/30 rounded-lg px-2 py-0.5 hover:bg-primary/10 transition-colors"
-                            title="Hacer administrador"
-                          >
-                            Hacer admin
-                          </button>
-                        )}
-                        <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${m.role === "admin" ? "bg-primary/10 text-primary" : "bg-muted text-muted-foreground"}`}>
-                          {m.role === "admin" ? "Admin" : "Miembro"}
-                        </span>
-                      </div>
-                    </div>
-                  );
-                })}
+              {/* Tabs: Miembros | Publicaciones */}
+              <div className="flex gap-1 bg-muted rounded-xl p-1 mb-3">
+                {([["members", "Miembros"], ["posts", "Publicaciones"]] as const).map(([id, label]) => (
+                  <button
+                    key={id}
+                    onClick={() => setDetailTab(id)}
+                    className={`flex-1 py-1.5 rounded-lg text-xs font-medium transition-colors ${detailTab === id ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"}`}
+                  >
+                    {label}
+                  </button>
+                ))}
               </div>
+
+              {detailTab === "members" && (
+                <div className="space-y-2 max-h-64 overflow-y-auto mb-4">
+                  {members.map((m) => {
+                    const isAdmin = selected.admin_id === user.user_id || members.find((me) => me.users.user_id === user.user_id)?.role === "admin";
+                    const isPrimaryAdmin = m.users.user_id === selected.admin_id;
+                    const isSelf = m.users.user_id === user.user_id;
+                    const canPromote = isAdmin && !isSelf && !isPrimaryAdmin && m.role !== "admin";
+                    const canDemote = isAdmin && !isSelf && !isPrimaryAdmin && m.role === "admin";
+                    const canKick = isAdmin && !isSelf && !isPrimaryAdmin;
+                    return (
+                      <div key={m.users.user_id} className="flex items-center gap-3">
+                        <button onClick={() => onViewProfile(m.users.user_id)} className="shrink-0 hover:opacity-80 transition-opacity rounded-full">
+                          {m.users.profile_photo_url ? (
+                            <img src={m.users.profile_photo_url} alt={m.users.name} className="w-9 h-9 rounded-full object-cover" />
+                          ) : (
+                            <div className="w-9 h-9 rounded-full bg-primary/20 flex items-center justify-center text-primary font-bold text-sm">{m.users.name[0]}</div>
+                          )}
+                        </button>
+                        <div className="flex-1 min-w-0">
+                          <button onClick={() => onViewProfile(m.users.user_id)} className="text-sm font-medium text-foreground truncate hover:underline text-left">{m.users.name}{m.users.surname ? ` ${m.users.surname}` : ""}</button>
+                        </div>
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          {canPromote && (
+                            <button
+                              onClick={() => promoteMember(m.users.user_id)}
+                              className="text-xs text-primary border border-primary/30 rounded-lg px-2 py-0.5 hover:bg-primary/10 transition-colors"
+                              title="Hacer administrador"
+                            >
+                              Hacer admin
+                            </button>
+                          )}
+                          {canDemote && (
+                            <button
+                              onClick={() => demoteMember(m.users.user_id)}
+                              className="text-xs text-yellow-700 border border-yellow-300 rounded-lg px-2 py-0.5 hover:bg-yellow-50 transition-colors"
+                              title="Quitar rol de administrador"
+                            >
+                              Quitar admin
+                            </button>
+                          )}
+                          {canKick && (
+                            <button
+                              onClick={() => kickMember(m.users.user_id)}
+                              className="text-xs text-destructive border border-destructive/30 rounded-lg px-2 py-0.5 hover:bg-destructive/10 transition-colors"
+                              title="Expulsar del grupo"
+                            >
+                              Expulsar
+                            </button>
+                          )}
+                          <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${m.role === "admin" ? "bg-primary/10 text-primary" : "bg-muted text-muted-foreground"}`}>
+                            {m.role === "admin" ? "Admin" : "Miembro"}
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
+              {detailTab === "posts" && (
+                <div className="space-y-3 mb-4">
+                  {myGroupIds.has(selected.group_id) && (
+                    <div className="flex flex-col gap-2">
+                      <textarea
+                        value={newPostContent}
+                        onChange={(e) => setNewPostContent(e.target.value)}
+                        placeholder="Escribe algo para el grupo..."
+                        rows={3}
+                        className="w-full rounded-xl border border-border bg-muted/40 px-3 py-2 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-primary/30"
+                      />
+                      <button
+                        onClick={() => createGroupPost()}
+                        disabled={postingGroup || !newPostContent.trim()}
+                        className="self-end px-4 py-1.5 rounded-xl bg-primary text-primary-foreground text-sm font-semibold hover:opacity-90 disabled:opacity-50 transition-opacity"
+                      >
+                        {postingGroup ? "Publicando..." : "Publicar"}
+                      </button>
+                    </div>
+                  )}
+                  <div className="space-y-3 max-h-96 overflow-y-auto">
+                    {groupPosts.length === 0 ? (
+                      <p className="text-xs text-muted-foreground text-center py-4">No hay publicaciones en este grupo aún.</p>
+                    ) : (
+                      groupPosts.map((gp) => (
+                        <div key={gp._id} className="bg-muted/30 rounded-xl p-3 space-y-1.5">
+                          <div className="flex items-center gap-2">
+                            <div className="w-7 h-7 rounded-full bg-primary/20 flex items-center justify-center text-primary font-bold text-xs shrink-0">
+                              {gp.author_photo_url
+                                ? <img src={gp.author_photo_url} alt={gp.author_name} className="w-7 h-7 rounded-full object-cover" />
+                                : gp.author_name[0]}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <p className="text-xs font-semibold text-foreground truncate">{gp.author_name}{gp.author_surname ? ` ${gp.author_surname}` : ""}</p>
+                              <p className="text-[10px] text-muted-foreground">{new Date(gp.created_at).toLocaleDateString("es-AR")}</p>
+                            </div>
+                            {(gp.user_id === user.user_id || selected.admin_id === user.user_id || members.find((me) => me.users.user_id === user.user_id)?.role === "admin") && (
+                              <button
+                                onClick={() => deleteGroupPost(gp._id)}
+                                className="text-destructive hover:bg-destructive/10 rounded-lg p-1 transition-colors"
+                                title="Eliminar publicación"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            )}
+                          </div>
+                          <p className="text-sm text-foreground whitespace-pre-wrap">{gp.content}</p>
+                          <button
+                            onClick={() => toggleGroupPostLike(gp)}
+                            className={`flex items-center gap-1 text-xs transition-colors ${gp.user_liked ? "text-primary font-semibold" : "text-muted-foreground hover:text-primary"}`}
+                          >
+                            <ThumbsUp className="w-3.5 h-3.5" />
+                            {gp.likes_count > 0 && <span>{gp.likes_count}</span>}
+                          </button>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+              )}
 
             </div>
           )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── User Profile Page (read-only) ───────────────────────────────────────────
+function UserProfilePage({ viewedId, currentUser, onBack, onViewProfile }: {
+  viewedId: string;
+  currentUser: UserSession;
+  onBack: () => void;
+  onViewProfile: (id: string) => void;
+}) {
+  const [profile, setProfile] = useState<FullProfile | null>(null);
+  const [connected, setConnected] = useState(false);
+  const [sent, setSent] = useState(false);
+  const [sending, setSending] = useState(false);
+
+  useEffect(() => {
+    fetch(`${API_URL}/profile/${viewedId}`).then((r) => r.ok ? r.json() : null).then((d) => d && setProfile(d));
+    fetch(`${API_URL}/connections/${currentUser.user_id}`).then((r) => r.ok ? r.json() : []).then((list: { user_id: string }[]) => {
+      setConnected(list.some((u) => u.user_id === viewedId));
+    });
+    fetch(`${API_URL}/connections/${currentUser.user_id}/sent`).then((r) => r.ok ? r.json() : []).then((list: { user_id: string }[]) => {
+      setSent(list.some((u) => u.user_id === viewedId));
+    });
+  }, [viewedId]);
+
+  const handleConnect = async () => {
+    if (sending || connected || sent) return;
+    setSending(true);
+    const res = await fetch(`${API_URL}/connections/request`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ from_user_id: currentUser.user_id, to_user_id: viewedId }),
+    });
+    if (res.ok) setSent(true);
+    setSending(false);
+  };
+
+  if (!profile) return <div className="flex justify-center py-20 text-muted-foreground text-sm">Cargando perfil...</div>;
+
+  const isSelf = viewedId === currentUser.user_id;
+
+  return (
+    <div className="max-w-2xl mx-auto py-8 px-4 space-y-4">
+      <button onClick={onBack} className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors mb-2">
+        <ChevronLeft size={16} /> Volver
+      </button>
+
+      {/* Header */}
+      <div className="bg-card rounded-2xl border border-border overflow-hidden">
+        <div className="h-32 bg-gradient-to-r from-primary to-primary/70 relative">
+          <img src="https://images.unsplash.com/photo-1497366216548-37526070297c?w=700&h=200&fit=crop&auto=format" alt="cover" className="w-full h-full object-cover opacity-40" />
+        </div>
+        <div className="px-6 pb-6 -mt-12 relative">
+          {profile.profile_photo_url
+            ? <img src={profile.profile_photo_url} alt={profile.name} className="w-24 h-24 rounded-full object-cover ring-4 ring-card" />
+            : <div className="w-24 h-24 rounded-full bg-primary/20 ring-4 ring-card flex items-center justify-center text-3xl font-bold text-primary">{profile.name[0]}</div>
+          }
+          <div className="mt-3 flex items-start justify-between">
+            <div>
+              <h1 className="font-display text-2xl font-semibold text-foreground">{profile.name} {profile.surname}</h1>
+              <p className="text-muted-foreground text-sm mt-0.5">{profile.email}</p>
+              <div className="flex gap-2 mt-2">
+                {profile.roles.map((r) => <span key={r} className="text-xs bg-primary/10 text-primary px-2.5 py-1 rounded-full font-medium capitalize">{r}</span>)}
+              </div>
+            </div>
+            {!isSelf && (
+              connected ? (
+                <span className="text-sm text-green-700 bg-green-100 px-4 py-2 rounded-xl font-medium">Contacto</span>
+              ) : (
+                <button onClick={handleConnect} disabled={sent || sending} className="text-sm bg-primary text-primary-foreground px-4 py-2 rounded-xl hover:opacity-90 disabled:opacity-60 transition-opacity font-semibold">
+                  {sending ? "Enviando..." : sent ? "Solicitud enviada" : "Conectar"}
+                </button>
+              )
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Experiencia */}
+      {profile.experience.length > 0 && (
+        <div className="bg-card rounded-2xl border border-border p-5">
+          <h2 className="font-semibold text-foreground mb-3 flex items-center gap-2"><Briefcase size={16} className="text-primary" /> Experiencia</h2>
+          <div className="space-y-3">
+            {profile.experience.map((e) => (
+              <div key={e.we_id} className="flex gap-3">
+                <div className="w-9 h-9 rounded-lg bg-primary/10 flex items-center justify-center shrink-0"><Briefcase size={14} className="text-primary" /></div>
+                <div>
+                  <p className="font-medium text-sm text-foreground">{e.title}</p>
+                  {e.companies?.name && <p className="text-xs text-muted-foreground">{e.companies.name}</p>}
+                  <p className="text-xs text-muted-foreground">{e.from_date?.slice(0, 7)}{e.is_current ? " · Actualidad" : e.end_date ? ` · ${e.end_date.slice(0, 7)}` : ""}</p>
+                  {e.description && <p className="text-xs text-foreground/70 mt-1">{e.description}</p>}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Educación */}
+      {profile.education.length > 0 && (
+        <div className="bg-card rounded-2xl border border-border p-5">
+          <h2 className="font-semibold text-foreground mb-3 flex items-center gap-2"><GraduationCap size={16} className="text-primary" /> Educación</h2>
+          <div className="space-y-3">
+            {profile.education.map((e) => (
+              <div key={e.edu_id} className="flex gap-3">
+                <div className="w-9 h-9 rounded-lg bg-primary/10 flex items-center justify-center shrink-0"><GraduationCap size={14} className="text-primary" /></div>
+                <div>
+                  <p className="font-medium text-sm text-foreground">{e.title}</p>
+                  <p className="text-xs text-muted-foreground">{e.institution}{e.field ? ` · ${e.field}` : ""}</p>
+                  {(e.from_date || e.end_date) && <p className="text-xs text-muted-foreground">{e.from_date?.slice(0, 7)}{e.is_actual ? " · Actualidad" : e.end_date ? ` · ${e.end_date.slice(0, 7)}` : ""}</p>}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Habilidades */}
+      {profile.skills.length > 0 && (
+        <div className="bg-card rounded-2xl border border-border p-5">
+          <h2 className="font-semibold text-foreground mb-3 flex items-center gap-2"><Zap size={16} className="text-primary" /> Habilidades</h2>
+          <div className="flex flex-wrap gap-2">
+            {profile.skills.map((s) => (
+              <span key={s.skills.skill_id} className="text-xs bg-secondary text-secondary-foreground px-3 py-1.5 rounded-full font-medium">
+                {s.skills.name} · {s.level}
+              </span>
+            ))}
+          </div>
         </div>
       )}
     </div>
@@ -2804,9 +3170,12 @@ export default function App() {
   const [authInitialMode, setAuthInitialMode] = useState<AuthMode>("login");
   const [pendingJobId, setPendingJobId] = useState<string | null>(null);
 
+  const [viewingUserId, setViewingUserId] = useState<string | null>(null);
+
   const handleLogin = (user: UserSession) => { setCurrentUser(user); setPage("feed"); };
   const handleLogout = () => { setCurrentUser(null); setPage("home"); };
   const handleNavigate = (p: Page, jobId?: string) => { setPage(p); if (jobId) setPendingJobId(jobId); };
+  const handleViewUser = (userId: string) => { setViewingUserId(userId); setPage("user-profile"); };
 
   if (!currentUser) {
     if (page === "home") return (
@@ -2819,12 +3188,13 @@ export default function App() {
   }
 
   const pageComponents: Record<string, JSX.Element> = {
-    feed: <FeedPage user={currentUser} />,
+    feed: <FeedPage user={currentUser} onViewProfile={handleViewUser} />,
     profile: <ProfilePage user={currentUser} onUserUpdate={setCurrentUser} />,
-    network: <NetworkPage user={currentUser} onNavigate={handleNavigate} />,
+    network: <NetworkPage user={currentUser} onNavigate={handleNavigate} onViewProfile={handleViewUser} />,
     jobs: <JobsPage user={currentUser!} pendingJobId={pendingJobId} onClearPendingJob={() => setPendingJobId(null)} />,
-    groups: <GroupsPage user={currentUser} />,
+    groups: <GroupsPage user={currentUser} onViewProfile={handleViewUser} />,
     messages: <MessagesPage user={currentUser!} />,
+    "user-profile": viewingUserId ? <UserProfilePage viewedId={viewingUserId} currentUser={currentUser} onBack={() => setPage("network")} onViewProfile={handleViewUser} /> : <></>,
     notifications: <NotificationsPage user={currentUser} />,
   };
 

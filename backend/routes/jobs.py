@@ -9,13 +9,39 @@ jobs_bp = Blueprint("jobs", __name__, url_prefix="/jobs")
 
 @jobs_bp.route("", methods=["GET"])
 def list_jobs():
-    res = (
+    q = (request.args.get("q") or "").strip()
+
+    base = (
         supabase_admin.table("jobs")
         .select("*, companies(name), job_skill(skills(skill_id, name, type))")
         .eq("is_active", True)
         .order("created_at", desc=True)
-        .execute()
     )
+
+    if not q:
+        return jsonify(base.execute().data), 200
+
+    pattern = f"%{q}%"
+
+    # job_ids matching by skill name
+    skill_res = supabase_admin.table("skills").select("skill_id").ilike("name", pattern).execute()
+    skill_ids = [s["skill_id"] for s in (skill_res.data or [])]
+    job_ids_by_skill: set = set()
+    if skill_ids:
+        js_res = supabase_admin.table("job_skill").select("job_id").in_("skill_id", skill_ids).execute()
+        job_ids_by_skill = {r["job_id"] for r in (js_res.data or [])}
+
+    # job_ids matching by company name
+    company_res = supabase_admin.table("companies").select("company_id").ilike("name", pattern).execute()
+    company_ids = [c["company_id"] for c in (company_res.data or [])]
+
+    or_parts = [f"title.ilike.{pattern}", f"location.ilike.{pattern}"]
+    if job_ids_by_skill:
+        or_parts.append(f"job_id.in.({','.join(job_ids_by_skill)})")
+    if company_ids:
+        or_parts.append(f"company_id.in.({','.join(company_ids)})")
+
+    res = base.or_(",".join(or_parts)).execute()
     return jsonify(res.data), 200
 
 
@@ -27,15 +53,29 @@ def create_job():
     if not user_id or not title:
         return jsonify({"error": "user_id y título son requeridos."}), 400
 
+    # Resolver company_id: puede venir directo o via company_name
+    company_id = data.get("company_id") or None
+    if not company_id:
+        company_name_input = (data.get("company_name") or "").strip()
+        if company_name_input:
+            existing_co = supabase_admin.table("companies").select("company_id").ilike("name", company_name_input).limit(1).execute()
+            if existing_co.data:
+                company_id = existing_co.data[0]["company_id"]
+            else:
+                import uuid as _uuid
+                new_co = supabase_admin.table("companies").insert({"company_id": str(_uuid.uuid4()), "name": company_name_input}).execute()
+                if new_co.data:
+                    company_id = new_co.data[0]["company_id"]
+
     entry = {
         "job_id": str(uuid.uuid4()),
         "poster_user_id": user_id,
-        "company_id": data.get("company_id") or None,
+        "company_id": company_id,
         "title": title,
         "description": data.get("description") or "",
         "location": data.get("location") or None,
         "working_hours": int(data["working_hours"]) if data.get("working_hours") else None,
-        "shift": data.get("shift") or "full-time",
+        "shift": data.get("shift") or "mañana",
         "modality": data.get("modality") or "presencial",
         "employment_type": data.get("employment_type") or "full-time",
         "is_active": True,
@@ -93,13 +133,32 @@ def delete_job(job_id):
         return jsonify({"error": "Oferta no encontrada."}), 404
     if job.data[0]["poster_user_id"] != user_id:
         return jsonify({"error": "No tenés permiso para eliminar esta oferta."}), 403
+    # Eliminar dependencias antes del job (Supabase puede no respetar CASCADE)
+    supabase_admin.table("applications").delete().eq("job_id", job_id).execute()
+    supabase_admin.table("job_skill").delete().eq("job_id", job_id).execute()
     supabase_admin.table("jobs").delete().eq("job_id", job_id).execute()
-    # Sincronizar con Neo4j: eliminar nodo :Job y sus relaciones
     delete_job_node(job_id)
     return jsonify({"ok": True}), 200
 
 
 # ── Postulaciones ─────────────────────────────────────────────────────────────
+
+@jobs_bp.route("/applications/<app_id>", methods=["DELETE"])
+def delete_application(app_id):
+    """El candidato cancela su propia postulación."""
+    data = request.get_json() or {}
+    user_id = data.get("user_id", "").strip()
+    if not user_id:
+        return jsonify({"error": "user_id requerido."}), 400
+    app_res = supabase_admin.table("applications").select("user_id").eq("application_id", app_id).limit(1).execute()
+    if not app_res.data:
+        return jsonify({"error": "Postulación no encontrada."}), 404
+    if app_res.data[0]["user_id"] != user_id:
+        return jsonify({"error": "No tenés permiso para cancelar esta postulación."}), 403
+    supabase_admin.table("application_status_history").delete().eq("application_id", app_id).execute()
+    supabase_admin.table("applications").delete().eq("application_id", app_id).execute()
+    return jsonify({"ok": True}), 200
+
 
 @jobs_bp.route("/applications/<app_id>", methods=["PUT"])
 def update_application(app_id):

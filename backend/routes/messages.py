@@ -2,6 +2,7 @@ import uuid
 from datetime import datetime, timezone
 from flask import Blueprint, request, jsonify
 from db_cassandra import get_collection, cassandra_available
+from db_neo4j import get_driver, neo4j_available
 from db import supabase_admin
 
 messages_bp = Blueprint("messages", __name__, url_prefix="/messages")
@@ -89,6 +90,20 @@ def send_message():
         return jsonify({"error": "from_user_id, to_user_id y body requeridos."}), 400
     if from_id == to_id:
         return jsonify({"error": "No podés enviarte mensajes a vos mismo."}), 400
+
+    # RF13: solo contactos pueden enviarse mensajes
+    if neo4j_available():
+        try:
+            driver = get_driver()
+            with driver.session() as session:
+                connected = session.run(
+                    "MATCH (a:User {user_id: $from})-[:CONNECTED_WITH]-(b:User {user_id: $to}) RETURN a LIMIT 1",
+                    {"from": from_id, "to": to_id}
+                ).single()
+            if not connected:
+                return jsonify({"error": "Solo podés enviar mensajes a tus contactos."}), 403
+        except Exception as e:
+            print(f"[WARN] messages contact check: {e}")
 
     convo_id = _convo_id(from_id, to_id)
     now = datetime.now(timezone.utc).isoformat()

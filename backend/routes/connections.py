@@ -192,35 +192,45 @@ def get_sent(user_id):
 def get_suggestions(user_id):
     """
     Personas que quizás conozcas:
-    1) Amigos-de-amigos (2do grado) ordenados por contactos en común.
-    2) Si no hay suficientes, usuarios sin conexión directa.
+    1) Contactos en común (2do/3er grado) ordenados por cantidad de mutuos.
+    2) Compañeros de empresa (trabajo experience compartido).
+    3) Si no hay suficientes, cualquier usuario sin conexión directa.
     """
     if not neo4j_available():
         return jsonify([]), 200
     driver = get_driver()
 
+    # Obtener ids ya excluidos (conectados o con solicitud pendiente en cualquier dirección)
     with driver.session() as session:
-        result = session.run(
-            "MATCH (u:User {user_id: $uid})-[:CONNECTED_WITH*2..3]->(s:User) "
-            "WHERE s.user_id <> $uid "
-            "  AND NOT (u)-[:CONNECTED_WITH]->(s) "
-            "  AND NOT (u)-[:PENDING_REQUEST]->(s) "
-            "  AND NOT (s)-[:PENDING_REQUEST]->(u) "
-            "RETURN DISTINCT s, count(*) AS mutuals "
-            "ORDER BY mutuals DESC LIMIT 10",
+        excluded_result = session.run(
+            "MATCH (u:User {user_id: $uid})-[:CONNECTED_WITH|PENDING_REQUEST]-(other:User) "
+            "RETURN other.user_id AS oid",
             uid=user_id
         )
-        suggestions = [{"user": dict(r["s"]), "mutuals": r["mutuals"]} for r in result]
+        excluded_ids = {r["oid"] for r in excluded_result}
 
-    # Sugerencias por empresa compartida (SQL)
-    already_suggested = {s["user"]["user_id"] for s in suggestions}
+    # 1) Sugerencias por contactos en común
+    with driver.session() as session:
+        result = session.run(
+            "MATCH (u:User {user_id: $uid})-[:CONNECTED_WITH]->(mid:User)-[:CONNECTED_WITH]->(s:User) "
+            "WHERE s.user_id <> $uid AND NOT s.user_id IN $excluded "
+            "RETURN DISTINCT s, count(DISTINCT mid) AS mutuals "
+            "ORDER BY mutuals DESC LIMIT 10",
+            uid=user_id, excluded=list(excluded_ids)
+        )
+        suggestions = [
+            {"user": dict(r["s"]), "mutuals": r["mutuals"], "reason": "contactos en común"}
+            for r in result
+        ]
+
+    suggested_ids = {s["user"]["user_id"] for s in suggestions} | excluded_ids
+
+    # 2) Sugerencias por empresa compartida (SQL)
     try:
-        # Obtener empresas donde trabajó el usuario
         we_res = supabase_admin.table("work experience").select("company_id").eq("user_id", user_id).execute()
         company_ids = list({row["company_id"] for row in (we_res.data or []) if row.get("company_id")})
 
         if company_ids:
-            # Otros usuarios que trabajaron en esas empresas
             coworkers_res = (
                 supabase_admin.table("work experience")
                 .select("user_id, users(user_id, name, surname, profile_photo_url)")
@@ -228,10 +238,10 @@ def get_suggestions(user_id):
                 .neq("user_id", user_id)
                 .execute()
             )
-            seen = set()
+            seen: set = set()
             for row in (coworkers_res.data or []):
                 u = row.get("users")
-                if not u or u["user_id"] in already_suggested or u["user_id"] in seen:
+                if not u or u["user_id"] in suggested_ids or u["user_id"] in seen:
                     continue
                 seen.add(u["user_id"])
                 suggestions.append({
@@ -242,24 +252,21 @@ def get_suggestions(user_id):
                         "photo_url": u.get("profile_photo_url") or "",
                     },
                     "mutuals": 0,
-                    "reason": "misma empresa"
+                    "reason": "misma empresa",
                 })
     except Exception as e:
         print(f"[WARN] Sugerencias por empresa: {e}")
 
-    # Si aún no hay sugerencias, traer cualquier usuario sin conexión de Neo4j
+    # 3) Fallback: cualquier usuario sin conexión directa
     if not suggestions:
         with driver.session() as session:
             result = session.run(
                 "MATCH (u:User {user_id: $uid}), (s:User) "
-                "WHERE s.user_id <> $uid "
-                "  AND NOT (u)-[:CONNECTED_WITH]->(s) "
-                "  AND NOT (u)-[:PENDING_REQUEST]->(s) "
-                "  AND NOT (s)-[:PENDING_REQUEST]->(u) "
+                "WHERE s.user_id <> $uid AND NOT s.user_id IN $excluded "
                 "RETURN s, 0 AS mutuals LIMIT 10",
-                uid=user_id
+                uid=user_id, excluded=list(excluded_ids)
             )
-            suggestions = [{"user": dict(r["s"]), "mutuals": r["mutuals"]} for r in result]
+            suggestions = [{"user": dict(r["s"]), "mutuals": r["mutuals"], "reason": None} for r in result]
 
     return jsonify(suggestions), 200
 

@@ -113,9 +113,27 @@ def login():
         return jsonify({"error": "Email o contraseña incorrectos."}), 401
 
     roles = get_user_roles(user["user_id"])
-    # Sincronizar nodo Neo4j en cada login (crea si no existe, actualiza si cambió)
     create_user_node(user["user_id"], user["name"], user.get("surname"), user.get("profile_photo_url"))
-    return jsonify(build_user_response(user, roles)), 200
+
+    resp = build_user_response(user, roles)
+    # Incluir company_id para posters (desde el último job publicado con empresa)
+    company_id = None
+    if "poster" in roles:
+        try:
+            jobs_res = (
+                supabase_admin.table("jobs")
+                .select("company_id")
+                .eq("poster_user_id", user["user_id"])
+                .not_.is_("company_id", "null")
+                .limit(1)
+                .execute()
+            )
+            if jobs_res.data:
+                company_id = jobs_res.data[0]["company_id"]
+        except Exception:
+            pass
+    resp["company_id"] = company_id
+    return jsonify(resp), 200
 
 
 @auth_bp.route("/register", methods=["POST"])
@@ -279,6 +297,28 @@ def add_role():
         return jsonify({"error": "Ya tenés ese rol asignado."}), 409
 
     supabase_admin.table("user_roles").insert({"user_id": user_id, "role_id": role_id}).execute()
+    roles = get_user_roles(user_id)
+    return jsonify({"roles": roles}), 200
+
+
+@auth_bp.route("/remove-role", methods=["POST"])
+def remove_role():
+    data = request.get_json() or {}
+    user_id = data.get("user_id", "").strip()
+    role_to_remove = data.get("role", "").strip()
+    if role_to_remove not in ("candidato", "poster"):
+        return jsonify({"error": "Rol inválido."}), 400
+
+    current_roles = get_user_roles(user_id)
+    if len(current_roles) <= 1:
+        return jsonify({"error": "No podés quedar sin roles."}), 400
+
+    role_res = supabase_admin.table("roles").select("role_id").eq("name", role_to_remove).limit(1).execute()
+    if not role_res.data:
+        return jsonify({"error": "Rol no encontrado."}), 404
+    role_id = role_res.data[0]["role_id"]
+
+    supabase_admin.table("user_roles").delete().eq("user_id", user_id).eq("role_id", role_id).execute()
     roles = get_user_roles(user_id)
     return jsonify({"roles": roles}), 200
 
