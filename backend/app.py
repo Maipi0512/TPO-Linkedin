@@ -62,7 +62,51 @@ cleanup_neo4j_orphans()
 
 @app.route("/health")
 def health():
-    return jsonify({"status": "ok"}), 200
+    """RNF4: Endpoint de disponibilidad con chequeo real de cada servicio."""
+    status = {"status": "ok", "services": {}}
+
+    # Supabase (SQL)
+    try:
+        supabase_admin.table("users").select("user_id").limit(1).execute()
+        status["services"]["supabase"] = "ok"
+    except Exception as e:
+        status["services"]["supabase"] = f"error: {str(e)[:80]}"
+        status["status"] = "degraded"
+
+    # MongoDB
+    try:
+        from db_mongo import get_db as _mongo
+        _mongo().command("ping")
+        status["services"]["mongodb"] = "ok"
+    except Exception as e:
+        status["services"]["mongodb"] = f"error: {str(e)[:80]}"
+        status["status"] = "degraded"
+
+    # Neo4j
+    try:
+        if neo4j_available():
+            get_driver().verify_connectivity()
+            status["services"]["neo4j"] = "ok"
+        else:
+            status["services"]["neo4j"] = "not_configured"
+    except Exception as e:
+        status["services"]["neo4j"] = f"error: {str(e)[:80]}"
+        status["status"] = "degraded"
+
+    # Cassandra / AstraDB
+    try:
+        from db_cassandra import cassandra_available, get_db as _cass
+        if cassandra_available():
+            _cass()
+            status["services"]["cassandra"] = "ok"
+        else:
+            status["services"]["cassandra"] = "not_configured"
+    except Exception as e:
+        status["services"]["cassandra"] = f"error: {str(e)[:80]}"
+        status["status"] = "degraded"
+
+    code = 200 if status["status"] == "ok" else 503
+    return jsonify(status), code
 
 
 @app.after_request

@@ -209,13 +209,14 @@ def get_suggestions(user_id):
         )
         excluded_ids = {r["oid"] for r in excluded_result}
 
-    # 1) Sugerencias por contactos en común
+    # 1) Sugerencias por contactos en común (relaciones no dirigidas para cubrir ambas direcciones)
     with driver.session() as session:
         result = session.run(
-            "MATCH (u:User {user_id: $uid})-[:CONNECTED_WITH]->(mid:User)-[:CONNECTED_WITH]->(s:User) "
+            "MATCH (u:User {user_id: $uid})-[:CONNECTED_WITH]-(mid:User)-[:CONNECTED_WITH]-(s:User) "
             "WHERE s.user_id <> $uid AND NOT s.user_id IN $excluded "
-            "RETURN DISTINCT s, count(DISTINCT mid) AS mutuals "
-            "ORDER BY mutuals DESC LIMIT 10",
+            "WITH s, count(DISTINCT mid) AS mutuals "
+            "ORDER BY mutuals DESC LIMIT 10 "
+            "RETURN s, mutuals",
             uid=user_id, excluded=list(excluded_ids)
         )
         suggestions = [

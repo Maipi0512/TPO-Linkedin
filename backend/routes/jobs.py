@@ -145,18 +145,24 @@ def delete_job(job_id):
 
 @jobs_bp.route("/applications/<app_id>", methods=["DELETE"])
 def delete_application(app_id):
-    """El candidato cancela su propia postulación."""
+    """RNF11: soft-delete — cambia estado a 'cancelled' y registra en historial (no elimina)."""
     data = request.get_json() or {}
     user_id = data.get("user_id", "").strip()
     if not user_id:
         return jsonify({"error": "user_id requerido."}), 400
-    app_res = supabase_admin.table("applications").select("user_id").eq("application_id", app_id).limit(1).execute()
+    app_res = supabase_admin.table("applications").select("user_id, status").eq("application_id", app_id).limit(1).execute()
     if not app_res.data:
         return jsonify({"error": "Postulación no encontrada."}), 404
     if app_res.data[0]["user_id"] != user_id:
         return jsonify({"error": "No tenés permiso para cancelar esta postulación."}), 403
-    supabase_admin.table("application_status_history").delete().eq("application_id", app_id).execute()
-    supabase_admin.table("applications").delete().eq("application_id", app_id).execute()
+    if app_res.data[0]["status"] == "cancelled":
+        return jsonify({"error": "La postulación ya está cancelada."}), 409
+    # Actualizar estado — el historial previo queda intacto para auditoría
+    supabase_admin.table("applications").update({"status": "cancelled"}).eq("application_id", app_id).execute()
+    supabase_admin.table("application_status_history").insert({
+        "application_id": app_id,
+        "status": "cancelled",
+    }).execute()
     return jsonify({"ok": True}), 200
 
 

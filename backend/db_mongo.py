@@ -35,6 +35,10 @@ def _init_collections(db):
     db.posts.create_index([("created_at", DESCENDING)], name="idx_posts_date")
     db.posts.create_index([("user_id", ASCENDING), ("created_at", DESCENDING)], name="idx_posts_user_date")
     db.posts.create_index([("tags", ASCENDING)], name="idx_posts_tags")
+    db.posts.create_index(
+        [("group_id", ASCENDING), ("created_at", DESCENDING)],
+        name="idx_posts_group_date", sparse=True
+    )
 
     # ── likes ──────────────────────────────────────────────────
     if "likes" not in db.list_collection_names():

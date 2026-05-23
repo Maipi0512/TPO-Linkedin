@@ -150,9 +150,23 @@ def add_experience(user_id):
     if not data.get("title") or not data.get("from_date"):
         return jsonify({"error": "Título y fecha de inicio son requeridos."}), 400
 
+    # Resolver company_id desde company_name si no viene directo
+    company_id = data.get("company_id") or None
+    if not company_id:
+        company_name = (data.get("company_name") or "").strip()
+        if company_name:
+            existing = supabase_admin.table("companies").select("company_id").ilike("name", company_name).limit(1).execute()
+            if existing.data:
+                company_id = existing.data[0]["company_id"]
+            else:
+                import uuid as _uuid
+                new_co = supabase_admin.table("companies").insert({"company_id": str(_uuid.uuid4()), "name": company_name}).execute()
+                if new_co.data:
+                    company_id = new_co.data[0]["company_id"]
+
     entry = {
         "user_id": user_id,
-        "company_id": data.get("company_id") or None,
+        "company_id": company_id,
         "title": data["title"],
         "description": data.get("description") or None,
         "from_date": data["from_date"],

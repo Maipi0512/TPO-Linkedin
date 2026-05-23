@@ -22,7 +22,7 @@ type Job = {
   companies: { name: string } | null;
   job_skill: { skills: { skill_id: number; name: string; type: string } }[];
 };
-type AppStatus = "submitted" | "in_review" | "in_process" | "successful" | "rejected";
+type AppStatus = "submitted" | "in_review" | "in_process" | "successful" | "rejected" | "cancelled";
 type AppHistoryEntry = { status: string; changed_at: string };
 type Application = {
   application_id: string; job_id: string; user_id: string;
@@ -145,7 +145,7 @@ function Sidebar({ page, setPage, onLogout, user }: { page: Page; setPage: (p: P
   ];
 
   return (
-    <aside className="w-64 min-h-screen flex flex-col bg-[var(--sidebar)] text-[var(--sidebar-foreground)] shrink-0">
+    <aside role="complementary" aria-label="Menú lateral" className="w-64 min-h-screen flex flex-col bg-[var(--sidebar)] text-[var(--sidebar-foreground)] shrink-0">
       {/* Logo */}
       <div className="px-6 pt-6 pb-4 border-b border-[var(--sidebar-border)]">
         <span className="font-display text-2xl font-semibold tracking-tight text-white">
@@ -176,10 +176,12 @@ function Sidebar({ page, setPage, onLogout, user }: { page: Page; setPage: (p: P
       </div>
 
       {/* Nav */}
-      <nav className="flex-1 px-3 mt-2 space-y-1">
+      <nav aria-label="Navegación principal" className="flex-1 px-3 mt-2 space-y-1">
         {navItems.map(({ id, icon: Icon, label, badge }) => (
           <button
             key={id}
+            aria-label={label}
+            aria-current={page === id ? "page" : undefined}
             onClick={() => setPage(id)}
             className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-xl text-sm font-medium transition-all ${
               page === id
@@ -187,10 +189,10 @@ function Sidebar({ page, setPage, onLogout, user }: { page: Page; setPage: (p: P
                 : "text-slate-300 hover:bg-[var(--sidebar-accent)] hover:text-white"
             }`}
           >
-            <Icon size={18} />
+            <Icon size={18} aria-hidden="true" />
             <span className="flex-1 text-left">{label}</span>
             {badge && page !== id && (
-              <span className="text-xs bg-rose-500 text-white rounded-full px-1.5 py-0.5 min-w-[20px] text-center leading-none">
+              <span aria-label={`${badge} sin leer`} className="text-xs bg-rose-500 text-white rounded-full px-1.5 py-0.5 min-w-[20px] text-center leading-none">
                 {badge}
               </span>
             )}
@@ -792,12 +794,14 @@ function FeedPage({ user, onViewProfile }: { user: UserSession; onViewProfile: (
                 return (
                   <button
                     key={label}
+                    aria-label={reaction ? (post.user_liked ? "Quitar me gusta" : "Me gusta") : (commentsOpen ? "Cerrar comentarios" : "Comentar")}
+                    aria-pressed={active}
                     onClick={() => reaction ? handleLike(post._id) : toggleComments(post._id)}
                     className={`flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-xs font-medium transition-colors ${
                       active ? "text-primary" : "text-muted-foreground hover:text-foreground hover:bg-muted"
                     }`}
                   >
-                    <Icon size={15} className={active ? "fill-primary/20 stroke-primary" : ""} />
+                    <Icon size={15} aria-hidden="true" className={active ? "fill-primary/20 stroke-primary" : ""} />
                     {label}
                   </button>
                 );
@@ -884,7 +888,7 @@ function ProfilePage({ user, onUserUpdate }: { user: UserSession; onUserUpdate: 
   const [showExpForm, setShowExpForm] = useState(false);
   const [showEduForm, setShowEduForm] = useState(false);
   const [showSkillForm, setShowSkillForm] = useState(false);
-  const [newExp, setNewExp] = useState({ title: "", description: "", from_date: "", end_date: "", is_current: false });
+  const [newExp, setNewExp] = useState({ title: "", company_name: "", description: "", from_date: "", end_date: "", is_current: false });
   const [newEdu, setNewEdu] = useState({ title: "", field: "", institution: "", from_date: "", end_date: "", is_actual: false });
   const [newSkillName, setNewSkillName] = useState("");
   const [newSkillType, setNewSkillType] = useState("técnica");
@@ -935,7 +939,7 @@ function ProfilePage({ user, onUserUpdate }: { user: UserSession; onUserUpdate: 
       body: JSON.stringify(newExp),
     });
     setShowExpForm(false);
-    setNewExp({ title: "", description: "", from_date: "", end_date: "", is_current: false });
+    setNewExp({ title: "", company_name: "", description: "", from_date: "", end_date: "", is_current: false });
     load();
   };
 
@@ -1057,8 +1061,9 @@ function ProfilePage({ user, onUserUpdate }: { user: UserSession; onUserUpdate: 
           <div className="mb-4 p-4 bg-muted rounded-xl space-y-2 border border-border">
             <div className="grid grid-cols-2 gap-2">
               <div><label className={labelCls}>Cargo *</label><input className={inputCls} placeholder="Full Stack Developer" value={newExp.title} onChange={(e) => setNewExp({ ...newExp, title: e.target.value })} /></div>
-              <div><label className={labelCls}>Desde *</label><input type="date" className={inputCls} value={newExp.from_date} onChange={(e) => setNewExp({ ...newExp, from_date: e.target.value })} /></div>
+              <div><label className={labelCls}>Empresa</label><input className={inputCls} placeholder="Ej: Google, Globant..." value={newExp.company_name} onChange={(e) => setNewExp({ ...newExp, company_name: e.target.value })} /></div>
             </div>
+            <div><label className={labelCls}>Desde *</label><input type="date" className={inputCls} value={newExp.from_date} onChange={(e) => setNewExp({ ...newExp, from_date: e.target.value })} /></div>
             <div><label className={labelCls}>Descripción</label><input className={inputCls} placeholder="Descripción del rol" value={newExp.description} onChange={(e) => setNewExp({ ...newExp, description: e.target.value })} /></div>
             <div className="flex items-center gap-3">
               <label className="flex items-center gap-2 text-sm text-foreground cursor-pointer">
@@ -1774,7 +1779,7 @@ function JobsPage({ user, pendingJobId, onClearPendingJob }: { user: UserSession
 
   const STATUS_LABEL: Record<string, string> = {
     submitted: "Enviada", in_review: "En revisión", in_process: "En proceso",
-    successful: "Aceptada", rejected: "Rechazada",
+    successful: "Aceptada", rejected: "Rechazada", cancelled: "Cancelada",
   };
   const STATUS_CLS: Record<string, string> = {
     submitted: "bg-yellow-100 text-yellow-700",
@@ -1782,6 +1787,7 @@ function JobsPage({ user, pendingJobId, onClearPendingJob }: { user: UserSession
     in_process: "bg-purple-100 text-purple-700",
     successful: "bg-green-100 text-green-700",
     rejected: "bg-red-100 text-red-700",
+    cancelled: "bg-muted text-muted-foreground line-through",
   };
   const StatusBadge = ({ status }: { status: string }) => (
     <span className={`text-xs px-2.5 py-1 rounded-full font-medium ${STATUS_CLS[status] ?? "bg-muted text-muted-foreground"}`}>
@@ -1925,11 +1931,14 @@ function JobsPage({ user, pendingJobId, onClearPendingJob }: { user: UserSession
                         <p className="text-xs text-muted-foreground">{app.updated_at?.slice(0, 10)}</p>
                       </div>
                       <StatusBadge status={app.status} />
-                      <button
-                        onClick={(e) => { e.stopPropagation(); cancelApplication(app.application_id); }}
-                        className="text-muted-foreground hover:text-destructive transition-colors p-1.5 ml-1 shrink-0"
-                        title="Cancelar postulación"
-                      ><Trash2 size={14} /></button>
+                      {app.status !== "cancelled" && (
+                        <button
+                          onClick={(e) => { e.stopPropagation(); cancelApplication(app.application_id); }}
+                          className="text-muted-foreground hover:text-destructive transition-colors p-1.5 ml-1 shrink-0"
+                          title="Cancelar postulación"
+                          aria-label="Cancelar postulación"
+                        ><Trash2 size={14} /></button>
+                      )}
                       <span className="text-xs text-muted-foreground">{isExpanded ? "▲" : "▼"}</span>
                     </div>
                     {isExpanded && (
@@ -2551,7 +2560,12 @@ function NotificationsPage({ user }: { user: UserSession }) {
     } finally { setLoading(false); }
   };
 
-  useEffect(() => { load(); }, [user.user_id]);
+  useEffect(() => {
+    load();
+    // RNF6: actualización automática cada 30 s sin recargar la página
+    const interval = setInterval(load, 30_000);
+    return () => clearInterval(interval);
+  }, [user.user_id]);
 
   const markAllRead = async () => {
     await fetch(`${API_URL}/notifications/${user.user_id}/read-all`, { method: "PUT" });
@@ -3198,12 +3212,41 @@ export default function App() {
     notifications: <NotificationsPage user={currentUser} />,
   };
 
+  const mobileNavItems = [
+    { id: "feed" as Page, icon: Home, label: "Inicio" },
+    { id: "network" as Page, icon: Users, label: "Red" },
+    { id: "jobs" as Page, icon: Briefcase, label: "Empleos" },
+    { id: "messages" as Page, icon: MessageSquare, label: "Mensajes" },
+    { id: "profile" as Page, icon: User, label: "Perfil" },
+  ];
+
   return (
     <div className="flex min-h-screen bg-background font-sans">
-      <Sidebar page={page} setPage={setPage} onLogout={handleLogout} user={currentUser} />
-      <main className="flex-1 overflow-y-auto">
+      {/* Sidebar — solo desktop */}
+      <div className="hidden md:block">
+        <Sidebar page={page} setPage={setPage} onLogout={handleLogout} user={currentUser} />
+      </div>
+
+      {/* Contenido principal */}
+      <main className="flex-1 overflow-y-auto pb-16 md:pb-0" role="main">
         {pageComponents[page] ?? <FeedPage user={currentUser} />}
       </main>
+
+      {/* Bottom nav — solo móvil (RNF5) */}
+      <nav aria-label="Navegación principal" className="md:hidden fixed bottom-0 inset-x-0 bg-card border-t border-border flex items-center justify-around py-1 z-50">
+        {mobileNavItems.map(({ id, icon: Icon, label }) => (
+          <button
+            key={id}
+            aria-label={label}
+            aria-current={page === id ? "page" : undefined}
+            onClick={() => setPage(id)}
+            className={`flex flex-col items-center gap-0.5 px-3 py-1.5 rounded-xl transition-colors ${page === id ? "text-primary" : "text-muted-foreground"}`}
+          >
+            <Icon size={20} />
+            <span className="text-[10px] font-medium">{label}</span>
+          </button>
+        ))}
+      </nav>
     </div>
   );
 }
