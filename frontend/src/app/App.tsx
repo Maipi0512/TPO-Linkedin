@@ -112,6 +112,7 @@ type GroupPost = {
 };
 
 
+
 // ─── Sidebar ────────────────────────────────────────────────────────────────
 function Sidebar({ page, setPage, onLogout, user }: { page: Page; setPage: (p: Page) => void; onLogout: () => void; user: UserSession | null }) {
   const [unreadNotifs, setUnreadNotifs] = useState(0);

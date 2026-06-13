@@ -323,6 +323,7 @@ def remove_role():
     return jsonify({"roles": roles}), 200
 
 
+
 @auth_bp.route("/forgot-password", methods=["POST"])
 def forgot_password():
     email = (request.get_json().get("email") or "").strip().lower()

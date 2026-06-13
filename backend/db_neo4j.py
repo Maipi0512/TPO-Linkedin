@@ -6,7 +6,6 @@ _driver = None
 
 def _init_indexes(session):
     """Crea índices y restricciones para acelerar las consultas de grafo (RNF1, RNF3)."""
-    # Unicidad de user_id → index implícito de alta cardinalidad
     session.run(
         "CREATE CONSTRAINT user_id_unique IF NOT EXISTS "
         "FOR (u:User) REQUIRE u.user_id IS UNIQUE"
@@ -15,11 +14,11 @@ def _init_indexes(session):
         "CREATE CONSTRAINT job_id_unique IF NOT EXISTS "
         "FOR (j:Job) REQUIRE j.job_id IS UNIQUE"
     )
-    # Index en Skill.name para lookups por nombre
     session.run(
         "CREATE INDEX skill_name_idx IF NOT EXISTS "
         "FOR (s:Skill) ON (s.name)"
     )
+
 
 
 def get_driver():

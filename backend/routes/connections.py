@@ -124,6 +124,7 @@ def delete_user_node(user_id: str):
         print(f"[WARN] Neo4j delete_user_node: {e}")
 
 
+
 # ─── Endpoints de la API ──────────────────────────────────────────────────────
 
 @connections_bp.route("/users", methods=["GET"])
@@ -326,6 +327,7 @@ def send_request():
             {"from": from_id, "to": to_id}
         )
 
+
     # Notificar al destinatario
     try:
         res = supabase_admin.table("users").select("name, surname").eq("user_id", from_id).limit(1).execute()
@@ -336,6 +338,7 @@ def send_request():
                                 f"{sender_name} te envió una solicitud de conexión.", ref_id=from_id)
     except Exception as e:
         print(f"[WARN] notif send_request: {e}")
+
 
     return jsonify({"ok": True}), 201
 
@@ -364,6 +367,7 @@ def accept_request():
     if not result:
         return jsonify({"error": "No existe esa solicitud pendiente."}), 404
 
+
     # Notificar al que envió la solicitud que fue aceptado
     try:
         res = supabase_admin.table("users").select("name, surname").eq("user_id", to_id).limit(1).execute()
@@ -374,6 +378,7 @@ def accept_request():
                                 f"{acceptor_name} aceptó tu solicitud de conexión.", ref_id=to_id)
     except Exception as e:
         print(f"[WARN] notif accept_request: {e}")
+
 
     return jsonify({"ok": True}), 200
 
@@ -418,13 +423,13 @@ def remove_connection():
     return jsonify({"ok": True}), 200
 
 
+
 @connections_bp.route("/cleanup-orphaned-nodes", methods=["DELETE"])
 def cleanup_orphaned_nodes():
     """Elimina nodos de Neo4j cuyos user_id ya no existen en Supabase."""
     if not neo4j_available():
         return jsonify({"ok": True, "deleted": 0}), 200
 
-    # Obtener todos los user_id válidos de Supabase
     users_res = supabase_admin.table("users").select("user_id").execute()
     valid_ids = {u["user_id"] for u in (users_res.data or [])}
 
