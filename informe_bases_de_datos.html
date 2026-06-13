@@ -1,0 +1,488 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Bases de Datos – LinkPro</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Segoe UI', sans-serif;
+      font-size: 14px;
+      color: #1e293b;
+      background: #f8fafc;
+      line-height: 1.7;
+    }
+    .page {
+      max-width: 860px;
+      margin: 0 auto;
+      padding: 50px 60px;
+      background: #fff;
+    }
+
+    /* HEADER */
+    .header {
+      text-align: center;
+      padding-bottom: 30px;
+      border-bottom: 3px solid #0a66c2;
+      margin-bottom: 36px;
+    }
+    .header .logo { font-size: 2.4rem; font-weight: 800; color: #0a66c2; }
+    .header .logo span { color: #1e293b; }
+    .header h1 { font-size: 1.25rem; color: #334155; margin-top: 10px; font-weight: 600; }
+    .header .sub { margin-top: 6px; font-size: 0.83rem; color: #94a3b8; }
+
+    /* INTRO */
+    .intro {
+      background: #eff6ff;
+      border-left: 4px solid #0a66c2;
+      padding: 16px 20px;
+      border-radius: 0 6px 6px 0;
+      margin-bottom: 40px;
+      font-size: 0.88rem;
+      color: #1e40af;
+    }
+    .intro p + p { margin-top: 8px; }
+
+    /* SECTION TITLE */
+    h2 {
+      font-size: 0.72rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: #94a3b8;
+      margin: 40px 0 16px;
+      padding-bottom: 6px;
+      border-bottom: 1px solid #e2e8f0;
+    }
+
+    /* DB CARD */
+    .db {
+      border: 1px solid #e2e8f0;
+      border-radius: 12px;
+      overflow: hidden;
+      margin-bottom: 28px;
+    }
+    .db-header {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      padding: 16px 22px;
+    }
+    .db.pg .db-header { background: #e0f2fe; border-bottom: 1px solid #bae6fd; }
+    .db.mg .db-header { background: #d1fae5; border-bottom: 1px solid #a7f3d0; }
+    .db.n4 .db-header { background: #ede9fe; border-bottom: 1px solid #ddd6fe; }
+    .db.cs .db-header { background: #fef3c7; border-bottom: 1px solid #fde68a; }
+
+    .db-badge {
+      padding: 4px 12px;
+      border-radius: 20px;
+      font-size: 0.7rem;
+      font-weight: 700;
+      color: #fff;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      white-space: nowrap;
+    }
+    .db.pg .db-badge { background: #0ea5e9; }
+    .db.mg .db-badge { background: #10b981; }
+    .db.n4 .db-badge { background: #7c3aed; }
+    .db.cs .db-badge { background: #d97706; }
+
+    .db-title { font-size: 1.1rem; font-weight: 700; }
+    .db.pg .db-title { color: #0369a1; }
+    .db.mg .db-title { color: #065f46; }
+    .db.n4 .db-title { color: #4c1d95; }
+    .db.cs .db-title { color: #78350f; }
+
+    .db-body { padding: 20px 22px; display: flex; flex-direction: column; gap: 18px; }
+
+    /* SUBSECTION */
+    .subsec h3 {
+      font-size: 0.78rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.07em;
+      color: #64748b;
+      margin-bottom: 8px;
+    }
+    .subsec p { font-size: 0.87rem; color: #334155; }
+    .subsec p + p { margin-top: 7px; }
+
+    /* TAG LIST */
+    .tags { display: flex; flex-wrap: wrap; gap: 6px; }
+    .tag {
+      border-radius: 4px;
+      padding: 3px 10px;
+      font-size: 0.75rem;
+      font-weight: 600;
+    }
+    .db.pg .tag { background: #e0f2fe; color: #0369a1; }
+    .db.mg .tag { background: #d1fae5; color: #065f46; }
+    .db.n4 .tag { background: #ede9fe; color: #5b21b6; }
+    .db.cs .tag { background: #fef3c7; color: #92400e; }
+
+    /* TWO COL INSIDE CARD */
+    .two { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+    .box {
+      background: #f8fafc;
+      border: 1px solid #e2e8f0;
+      border-radius: 6px;
+      padding: 13px 15px;
+    }
+    .box h4 {
+      font-size: 0.75rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.07em;
+      color: #64748b;
+      margin-bottom: 7px;
+    }
+    .box ul { padding-left: 16px; font-size: 0.83rem; color: #334155; }
+    .box li { margin: 4px 0; }
+    .box p { font-size: 0.83rem; color: #334155; }
+
+    /* HIGHLIGHT */
+    strong { font-weight: 700; }
+    em { font-style: italic; }
+    code {
+      font-family: 'Consolas', monospace;
+      font-size: 0.8rem;
+      background: #f1f5f9;
+      padding: 1px 5px;
+      border-radius: 3px;
+      color: #475569;
+    }
+
+    /* DIVIDER */
+    hr { border: none; border-top: 1px solid #e2e8f0; margin: 6px 0; }
+
+    /* SUMMARY TABLE */
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.82rem;
+      margin-top: 10px;
+    }
+    th {
+      background: #1e293b;
+      color: #fff;
+      padding: 9px 14px;
+      text-align: left;
+      font-size: 0.75rem;
+      letter-spacing: 0.04em;
+    }
+    td {
+      padding: 9px 14px;
+      border-bottom: 1px solid #e2e8f0;
+      vertical-align: top;
+    }
+    tr:nth-child(even) td { background: #f8fafc; }
+
+    /* FOOTER */
+    .footer {
+      margin-top: 48px;
+      padding-top: 18px;
+      border-top: 1px solid #e2e8f0;
+      text-align: center;
+      font-size: 0.76rem;
+      color: #94a3b8;
+    }
+
+    @media print {
+      body { background: #fff; font-size: 11.5pt; }
+      .page { padding: 20px 30px; }
+      .db { page-break-inside: avoid; }
+      h2 { page-break-after: avoid; }
+    }
+  </style>
+</head>
+<body>
+<div class="page">
+
+  <!-- HEADER -->
+  <div class="header">
+    <div class="logo">Link<span>Pro</span></div>
+    <h1>Arquitectura de bases de datos del proyecto</h1>
+    <div class="sub">Ingeniería de Datos II · Trabajo Práctico Obligatorio · 2026</div>
+  </div>
+
+  <!-- INTRO -->
+  <div class="intro">
+    <p><strong>LinkPro</strong> es una red social profesional inspirada en LinkedIn. Permite a los usuarios gestionar su perfil, publicar y buscar empleos, conectarse con otros profesionales, compartir contenido en un feed, intercambiar mensajes y recibir notificaciones.</p>
+    <p>El sistema aplica el patrón de <strong>persistencia políglota</strong>: en lugar de forzar todos los datos en un único motor, usamos cuatro bases de datos distintas — cada una elegida según el tipo de dato que maneja y el patrón de acceso que requiere. Grandes plataformas como LinkedIn, Netflix y Facebook usan exactamente esta estrategia.</p>
+  </div>
+
+  <!-- POSTGRESQL -->
+  <h2>Base de datos 1</h2>
+  <div class="db pg">
+    <div class="db-header">
+      <span class="db-badge">Relacional · SQL</span>
+      <span class="db-title">Supabase — PostgreSQL</span>
+    </div>
+    <div class="db-body">
+
+      <div class="subsec">
+        <h3>¿Qué datos guarda?</h3>
+        <div class="tags">
+          <span class="tag">usuarios</span>
+          <span class="tag">empresas</span>
+          <span class="tag">ofertas de trabajo</span>
+          <span class="tag">postulaciones</span>
+          <span class="tag">historial de estados</span>
+          <span class="tag">habilidades</span>
+          <span class="tag">educación</span>
+          <span class="tag">experiencia laboral</span>
+          <span class="tag">grupos</span>
+          <span class="tag">miembros de grupos</span>
+        </div>
+      </div>
+
+      <div class="subsec">
+        <h3>¿Para qué se usa?</h3>
+        <p>Es el núcleo estructural del sistema. Gestiona todos los datos que tienen relaciones bien definidas entre sí: un usuario se postula a una oferta publicada por una empresa, tiene habilidades, pertenece a grupos y tiene historial de experiencia y educación. También maneja el sistema de autenticación y los roles (candidato / reclutador).</p>
+        <p>Cada vez que un reclutador crea una oferta, cuando un candidato se postula, cuando el estado de una postulación cambia (enviada → en revisión → aceptada / rechazada), o cuando se registra un nuevo usuario, todo pasa por PostgreSQL.</p>
+      </div>
+
+      <div class="two">
+        <div class="box">
+          <h4>¿Por qué PostgreSQL?</h4>
+          <ul>
+            <li>Los datos tienen <strong>estructura fija y conocida</strong>: columnas claras, tipos definidos, claves foráneas entre tablas.</li>
+            <li>Las relaciones entre entidades son complejas: un empleo tiene habilidades requeridas, una postulación pertenece a un usuario y a un empleo, una habilidad puede estar en múltiples usuarios y empleos.</li>
+            <li>Necesitamos <strong>transacciones ACID</strong>: si una postulación falla a mitad de camino, los datos no pueden quedar en estado inconsistente.</li>
+            <li>El historial de estados de una postulación requiere integridad garantizada — no podemos perder ese registro.</li>
+            <li>SQL permite consultas complejas con <strong>joins entre múltiples tablas</strong>, ideales para listar empleos con sus habilidades y empresa, o postulaciones con los datos del candidato.</li>
+          </ul>
+        </div>
+        <div class="box">
+          <h4>¿Qué aporta Supabase?</h4>
+          <ul>
+            <li>Supabase es un Backend-as-a-Service que corre sobre PostgreSQL y agrega: <strong>autenticación</strong> (login, tokens JWT), <strong>API REST automática</strong> (PostgREST) y <strong>Row Level Security</strong>.</li>
+            <li>Se usan dos clientes en el backend: el cliente <em>anon</em> para operaciones públicas y el cliente <em>service</em> (con permisos de administrador) para operaciones que bypassean los permisos de fila.</li>
+            <li>Permite buscar empleos por título, empresa o habilidad con una sola consulta combinando <code>ilike</code> y <code>or</code>.</li>
+            <li>El soft-delete de postulaciones (cambiar estado a <em>cancelled</em> en lugar de borrar) se implementa aquí para conservar el historial de auditoría.</li>
+          </ul>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- MONGODB -->
+  <h2>Base de datos 2</h2>
+  <div class="db mg">
+    <div class="db-header">
+      <span class="db-badge">Documental · NoSQL</span>
+      <span class="db-title">MongoDB</span>
+    </div>
+    <div class="db-body">
+
+      <div class="subsec">
+        <h3>¿Qué datos guarda?</h3>
+        <div class="tags">
+          <span class="tag">publicaciones del feed</span>
+          <span class="tag">publicaciones en grupos</span>
+          <span class="tag">comentarios</span>
+          <span class="tag">likes</span>
+        </div>
+      </div>
+
+      <div class="subsec">
+        <h3>¿Para qué se usa?</h3>
+        <p>Gestiona todo el contenido social que los usuarios generan: lo que publican en el feed general, lo que publican dentro de grupos, los comentarios que dejan en las publicaciones y los likes. Cada publicación se almacena como un documento JSON completo que contiene el texto, el autor, la fecha, las etiquetas y el contador de interacciones.</p>
+        <p>Cuando un usuario abre el feed, se consultan los posts ordenados por fecha. Cuando comenta, se inserta un nuevo documento en la colección de comentarios vinculado al post por su <code>post_id</code>. Cuando da like, se actualiza el contador directamente en el documento del post.</p>
+      </div>
+
+      <div class="two">
+        <div class="box">
+          <h4>¿Por qué MongoDB?</h4>
+          <ul>
+            <li>Una publicación puede tener texto solamente, o texto con imagen, o pertenecer a un grupo, o tener etiquetas — su <strong>estructura varía</strong>. El modelo documental acepta documentos con campos distintos sin necesidad de definir un esquema rígido.</li>
+            <li>El contenido social <strong>evoluciona seguido</strong>: si queremos agregar un nuevo campo (por ejemplo, un "tipo de reacción" distinto al like), se agrega en nuevos documentos sin tocar los existentes ni hacer una migración de base de datos.</li>
+            <li>Las consultas del feed son simples: buscar por autor, ordenar por fecha, filtrar por etiqueta. No hacen falta joins complejos.</li>
+            <li>MongoDB tiene <strong>índices compuestos</strong> sobre <code>author_id</code>, <code>created_at</code> y <code>tags</code> que hacen eficientes estas consultas.</li>
+            <li>El patrón de relaciones <em>embebidas vs. enlazadas</em> (visto en la materia) se aplica: los likes son un contador embebido en el post, pero los comentarios son documentos separados enlazados por <code>post_id</code>, ya que su número puede crecer indefinidamente.</li>
+          </ul>
+        </div>
+        <div class="box">
+          <h4>¿Por qué no PostgreSQL para esto?</h4>
+          <ul>
+            <li>Guardar posts en SQL obligaría a definir columnas fijas para todos los campos posibles, muchas de las cuales quedarían vacías según el tipo de publicación.</li>
+            <li>Los comentarios anidados y los likes representados como array en un documento JSON son más naturales que tablas relacionales con joins.</li>
+            <li>El contenido social tiene <strong>más escrituras y lecturas simples</strong> que consultas analíticas complejas — justamente el caso de uso donde MongoDB brilla frente a SQL.</li>
+            <li>MongoDB escala horizontalmente (sharding) si el volumen de posts crece — algo más complejo de lograr con PostgreSQL.</li>
+          </ul>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- NEO4J -->
+  <h2>Base de datos 3</h2>
+  <div class="db n4">
+    <div class="db-header">
+      <span class="db-badge">Grafos · NoSQL</span>
+      <span class="db-title">Neo4j</span>
+    </div>
+    <div class="db-body">
+
+      <div class="subsec">
+        <h3>¿Qué datos guarda?</h3>
+        <div class="two">
+          <div class="box">
+            <h4>Nodos</h4>
+            <div class="tags" style="margin-bottom:0;">
+              <span class="tag">:User</span>
+              <span class="tag">:Job</span>
+              <span class="tag">:Skill</span>
+            </div>
+            <p style="margin-top:8px; font-size:0.8rem; color:#475569;">Cada nodo tiene propiedades: <code>user_id</code>, <code>job_id</code> o el nombre de la habilidad.</p>
+          </div>
+          <div class="box">
+            <h4>Relaciones</h4>
+            <div class="tags" style="margin-bottom:0;">
+              <span class="tag">CONNECTED_WITH</span>
+              <span class="tag">PENDING_REQUEST</span>
+              <span class="tag">HAS_SKILL</span>
+              <span class="tag">REQUIRES_SKILL</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="subsec">
+        <h3>¿Para qué se usa?</h3>
+        <p><strong>Red de conexiones:</strong> cuando un usuario manda una solicitud de conexión se crea la relación <code>PENDING_REQUEST</code>. Al aceptarla, se reemplaza por <code>CONNECTED_WITH</code>. Esto modela la red de contactos de la misma forma en que LinkedIn la tiene: un grafo de personas conectadas entre sí.</p>
+        <p><strong>Sugerencias de personas:</strong> el algoritmo busca en Neo4j usuarios que estén conectados a los contactos del usuario actual (amigos de amigos), que tengan habilidades en común, y que aún no estén conectados con él. Este tipo de recorrido es trivial en un grafo y muy costoso con joins en SQL.</p>
+        <p><strong>Job match:</strong> dado que los empleos tienen relaciones <code>REQUIRES_SKILL</code> y los usuarios tienen <code>HAS_SKILL</code>, Neo4j puede encontrar en una sola consulta los empleos que mejor se ajustan al perfil del usuario — sin hacer cruce de tablas en SQL.</p>
+      </div>
+
+      <div class="two">
+        <div class="box">
+          <h4>¿Por qué Neo4j?</h4>
+          <ul>
+            <li>En una red social, <strong>las relaciones son el dato más importante</strong>. "¿Quién conoce a quién?" es una pregunta de grafo, no de tabla.</li>
+            <li>Con SQL, calcular sugerencias de conexión requeriría múltiples joins anidados que se vuelven muy lentos a medida que la red crece. En Neo4j es un simple recorrido de dos saltos.</li>
+            <li>Neo4j usa almacenamiento nativo de grafos: cada nodo tiene punteros directos a sus relaciones, lo que hace los recorridos extremadamente rápidos.</li>
+            <li>El lenguaje <strong>Cypher</strong> permite expresar consultas de red de forma muy natural: <code>(usuario)-[:CONNECTED_WITH]->(contacto)-[:CONNECTED_WITH]->(sugerencia)</code>.</li>
+            <li>La materia señala que LinkedIn usa bases de grafos exactamente para esto.</li>
+          </ul>
+        </div>
+        <div class="box">
+          <h4>Detalles de implementación</h4>
+          <ul>
+            <li>Al crear un usuario en Supabase, automáticamente se crea su nodo <code>:User</code> en Neo4j — los dos sistemas se mantienen sincronizados.</li>
+            <li>Al publicar un empleo, se crea el nodo <code>:Job</code> con sus relaciones <code>REQUIRES_SKILL</code>.</li>
+            <li>Se usan <strong>restricciones UNIQUE</strong> en <code>user_id</code> y <code>job_id</code> para garantizar que no haya nodos duplicados.</li>
+            <li>Hay un índice sobre <code>Skill.name</code> para encontrar habilidades rápidamente.</li>
+            <li>Si Neo4j no está disponible, el sistema sigue funcionando — las sugerencias simplemente no se muestran (diseño tolerante a fallos).</li>
+          </ul>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- CASSANDRA -->
+  <h2>Base de datos 4</h2>
+  <div class="db cs">
+    <div class="db-header">
+      <span class="db-badge">Tabular · NoSQL</span>
+      <span class="db-title">AstraDB — Apache Cassandra</span>
+    </div>
+    <div class="db-body">
+
+      <div class="subsec">
+        <h3>¿Qué datos guarda?</h3>
+        <div class="tags">
+          <span class="tag">mensajes directos entre usuarios</span>
+          <span class="tag">conversaciones</span>
+          <span class="tag">notificaciones</span>
+        </div>
+      </div>
+
+      <div class="subsec">
+        <h3>¿Para qué se usa?</h3>
+        <p><strong>Mensajería:</strong> cuando un usuario envía un mensaje a otro, ese mensaje se escribe en Cassandra dentro de la conversación correspondiente. Al abrir una conversación se leen todos los mensajes ordenados por timestamp. La clave de partición es el <code>conversation_id</code>, lo que garantiza que todos los mensajes de una misma conversación estén en el mismo nodo del clúster y se puedan leer juntos sin acceder a múltiples servidores.</p>
+        <p><strong>Notificaciones:</strong> cada acción relevante del sistema (nueva solicitud de conexión, postulación aceptada, nuevo comentario en un post) genera una notificación que se escribe en Cassandra. Al cargar la pantalla del usuario se leen sus notificaciones recientes ordenadas por fecha.</p>
+      </div>
+
+      <div class="two">
+        <div class="box">
+          <h4>¿Por qué Cassandra?</h4>
+          <ul>
+            <li>Los mensajes y notificaciones se escriben <strong>constantemente y en gran volumen</strong>. Cassandra está diseñada para esto: sus escrituras son muy baratas (van primero al Commit Log en memoria, luego al disco), mucho más que en una base relacional.</li>
+            <li>Es una base <strong>sin punto único de falla</strong>: todos los nodos son iguales, no hay nodo "master". Si cae un nodo, los demás siguen respondiendo.</li>
+            <li>Los mensajes son datos <strong>append-only</strong> (siempre se agregan, casi nunca se editan), que es exactamente el patrón para el que Cassandra está optimizada.</li>
+            <li>Para las notificaciones es aceptable la <strong>consistencia eventual</strong>: si una notificación aparece un segundo después de que ocurrió el evento, no es un problema crítico. Cassandra prioriza disponibilidad sobre consistencia estricta.</li>
+            <li>Facebook desarrolló Cassandra en 2007 para gestionar búsquedas en bandejas de entrada a escala masiva — el mismo caso de uso que aplicamos acá.</li>
+          </ul>
+        </div>
+        <div class="box">
+          <h4>Detalles de implementación</h4>
+          <ul>
+            <li>Se usa <strong>AstraDB</strong>, que es Cassandra administrado en la nube (DataStax). No hay que mantener un clúster propio — se accede con un token y la URL del endpoint.</li>
+            <li>El SDK es <code>astrapy</code> (versión 2.0), la librería oficial de Python para AstraDB.</li>
+            <li>Las notificaciones pueden tener <strong>TTL</strong> (tiempo de vida): Cassandra las marca como expiradas automáticamente sin necesidad de borrarlas manualmente.</li>
+            <li>El sistema fue diseñado con <strong>degradación elegante</strong>: si AstraDB no está disponible en algún momento, el backend no cae — simplemente los mensajes y notificaciones no se sirven hasta que el servicio se recupere.</li>
+            <li>La clave de partición de los mensajes es el <code>conversation_id</code>, garantizando que todos los mensajes de una conversación vivan en el mismo nodo.</li>
+          </ul>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- TABLA RESUMEN -->
+  <h2>Resumen comparativo</h2>
+  <table>
+    <thead>
+      <tr>
+        <th>Base de datos</th>
+        <th>Tipo</th>
+        <th>Datos que maneja</th>
+        <th>Fortaleza clave</th>
+        <th>Consistencia</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><strong>PostgreSQL</strong><br><em>Supabase</em></td>
+        <td>Relacional · SQL</td>
+        <td>Usuarios, empleos, postulaciones, grupos</td>
+        <td>Integridad referencial, transacciones ACID, consultas con joins</td>
+        <td>Fuerte (ACID)</td>
+      </tr>
+      <tr>
+        <td><strong>MongoDB</strong></td>
+        <td>Documental · NoSQL</td>
+        <td>Posts, comentarios, likes</td>
+        <td>Esquema flexible, evolución sin migraciones, CRUD rápido</td>
+        <td>Eventual (configurable)</td>
+      </tr>
+      <tr>
+        <td><strong>Neo4j</strong></td>
+        <td>Grafos · NoSQL</td>
+        <td>Conexiones, sugerencias, job match</td>
+        <td>Recorrido eficiente de relaciones, consultas de red</td>
+        <td>Fuerte (Raft)</td>
+      </tr>
+      <tr>
+        <td><strong>Cassandra</strong><br><em>AstraDB</em></td>
+        <td>Tabular · NoSQL</td>
+        <td>Mensajes, conversaciones, notificaciones</td>
+        <td>Alta tasa de escritura, sin punto de falla, alta disponibilidad</td>
+        <td>Eventual (BASE)</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div class="footer">
+    LinkPro · Ingeniería de Datos II · 2026
+  </div>
+
+</div>
+</body>
+</html>

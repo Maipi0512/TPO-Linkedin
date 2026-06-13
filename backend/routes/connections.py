@@ -46,9 +46,8 @@ def add_user_skill(user_id: str, skill_name: str, level: str = "Principiante"):
         driver = get_driver()
         with driver.session() as session:
             session.run(
+                "MERGE (u:User {user_id: $uid}) "
                 "MERGE (s:Skill {name: $name}) "
-                "WITH s "
-                "MATCH (u:User {user_id: $uid}) "
                 "MERGE (u)-[r:HAS_SKILL]->(s) "
                 "SET r.level = $level",
                 name=skill_name, uid=user_id, level=level
